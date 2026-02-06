@@ -12,7 +12,8 @@ interface ControlsProps {
   onReset: () => void
 }
 
-const SIZES = ["S", "M", "L"] as const
+const SIZES = ["S", "M", "L", "P"] as const
+const SIZE_LABELS: Record<string, string> = { S: "S", M: "M", L: "L", P: "P(개수)" }
 const COUPONS = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
 const EXTRAS = Array.from({ length: 11 }, (_, i) => i * 500)
 
@@ -52,7 +53,7 @@ export function Controls({
                 : "border-border bg-card text-foreground"
             }`}
           >
-            {s}
+            {SIZE_LABELS[s] ?? s}
           </button>
         ))}
       </div>

@@ -31,7 +31,7 @@ export function unitPriceByName(
 
 export function calcRecipeCost(
   menu: Menu | null,
-  size: "S" | "M" | "L",
+  size: "S" | "M" | "L" | "P",
   recipes: Recipe[],
   ingredients: Ingredient[]
 ): number {
@@ -54,7 +54,7 @@ export function getOptionsByGroup(
 
 export interface CalcState {
   platformKey: string
-  size: "S" | "M" | "L"
+  size: "S" | "M" | "L" | "P"
   coupon: number
   storeDeliveryExtra: number
   radio: Record<string, string>
@@ -93,7 +93,9 @@ export function calcAll(
         ? menu.price_s
         : state.size === "M"
           ? menu.price_m
-          : menu.price_l
+          : state.size === "P"
+            ? menu.price_p
+            : menu.price_l
       : 0,
     0
   )
