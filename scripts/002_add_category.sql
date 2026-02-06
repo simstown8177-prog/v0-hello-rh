@@ -1,0 +1,2 @@
+ALTER TABLE public.menus
+ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '전체';
