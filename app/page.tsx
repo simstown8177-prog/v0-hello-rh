@@ -142,6 +142,7 @@ export default function Home() {
             calcState={calcState}
             setCalcState={setCalcState}
             onReset={handleReset}
+            selectedMenu={selectedMenu}
           />
 
           <SummaryCards

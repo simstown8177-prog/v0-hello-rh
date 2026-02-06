@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import type { Platform } from "@/lib/types"
+import type { Platform, Menu } from "@/lib/types"
 import type { CalcState } from "@/lib/calc"
 
 interface ControlsProps {
@@ -10,10 +10,17 @@ interface ControlsProps {
   calcState: CalcState
   setCalcState: React.Dispatch<React.SetStateAction<CalcState>>
   onReset: () => void
+  selectedMenu: Menu | null
 }
 
-const SIZES = ["S", "M", "L", "P"] as const
 const SIZE_LABELS: Record<string, string> = { S: "S", M: "M", L: "L", P: "P(개수)" }
+
+/** 사이드 카테고리는 P만, 그 외 카테고리는 S/M/L만 */
+function getSizesForMenu(menu: Menu | null): ("S" | "M" | "L" | "P")[] {
+  if (!menu) return ["S", "M", "L"]
+  if (menu.category === "사이드" || menu.category === "음료") return ["P"]
+  return ["S", "M", "L"]
+}
 const COUPONS = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
 const EXTRAS = Array.from({ length: 11 }, (_, i) => i * 500)
 
@@ -22,7 +29,17 @@ export function Controls({
   calcState,
   setCalcState,
   onReset,
+  selectedMenu,
 }: ControlsProps) {
+  const sizes = getSizesForMenu(selectedMenu)
+
+  // 카테고리가 바뀌어서 현재 선택된 사이즈가 없을 때 첫 번째 사이즈로 자동 전환
+  React.useEffect(() => {
+    if (!sizes.includes(calcState.size as typeof sizes[number])) {
+      setCalcState((prev) => ({ ...prev, size: sizes[0] }))
+    }
+  }, [sizes, calcState.size, setCalcState])
+
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
       <select
@@ -40,7 +57,7 @@ export function Controls({
       </select>
 
       <div className="flex items-center gap-1.5">
-        {SIZES.map((s) => (
+        {sizes.map((s) => (
           <button
             key={s}
             type="button"

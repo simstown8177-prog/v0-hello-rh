@@ -534,10 +534,7 @@ function AdminMenus({
 
       <div className="flex flex-col gap-2.5">
         {localMenus.map((m) => {
-          const sCost = calcRecipeCost(m, "S", localRecipes, ingredients)
-          const mCost = calcRecipeCost(m, "M", localRecipes, ingredients)
-          const lCost = calcRecipeCost(m, "L", localRecipes, ingredients)
-          const pCost = calcRecipeCost(m, "P", localRecipes, ingredients)
+          const isSideOrDrink = m.category === "사이드" || m.category === "음료"
 
           return (
             <div
@@ -555,14 +552,21 @@ function AdminMenus({
                     </span>
                   </div>
                   <div className="mt-1 text-xs font-bold text-muted-foreground">
-                    {"원가(S/M/L/P): "}
-                    {won(sCost)}
-                    {" / "}
-                    {won(mCost)}
-                    {" / "}
-                    {won(lCost)}
-                    {" / "}
-                    {won(pCost)}
+                    {isSideOrDrink ? (
+                      <>
+                        {"원가(P): "}
+                        {won(calcRecipeCost(m, "P", localRecipes, ingredients))}
+                      </>
+                    ) : (
+                      <>
+                        {"원가(S/M/L): "}
+                        {won(calcRecipeCost(m, "S", localRecipes, ingredients))}
+                        {" / "}
+                        {won(calcRecipeCost(m, "M", localRecipes, ingredients))}
+                        {" / "}
+                        {won(calcRecipeCost(m, "L", localRecipes, ingredients))}
+                      </>
+                    )}
                   </div>
                 </div>
                 <button
@@ -574,7 +578,7 @@ function AdminMenus({
                 </button>
               </div>
 
-              <div className="mt-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
+              <div className={`mt-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-3 ${isSideOrDrink ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
                     메뉴명
@@ -603,7 +607,7 @@ function AdminMenus({
                     <option value="전체">전체 (미분류)</option>
                   </select>
                 </div>
-                {(["S", "M", "L", "P"] as const).map((size) => (
+                {(isSideOrDrink ? ["P"] as const : ["S", "M", "L"] as const).map((size) => (
                   <div key={size}>
                     <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
                       {size === "P" ? "P(개수)" : size}

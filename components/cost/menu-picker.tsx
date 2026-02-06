@@ -90,11 +90,7 @@ export function MenuPicker({
       {/* Menu cards */}
       <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1.5 snap-x snap-mandatory scrollbar-thin">
         {filtered.map((m) => {
-          const sCost = calcRecipeCost(m, "S", recipes, ingredients)
-          const mCost = calcRecipeCost(m, "M", recipes, ingredients)
-          const lCost = calcRecipeCost(m, "L", recipes, ingredients)
-          const pCost = calcRecipeCost(m, "P", recipes, ingredients)
-          const hasP = m.price_p > 0
+          const isSideOrDrink = m.category === "사이드" || m.category === "음료"
           const isSelected = m.id === selectedMenuId
 
           return (
@@ -117,27 +113,29 @@ export function MenuPicker({
                 )}
               </div>
               <div className="mt-1.5 text-xs font-bold leading-relaxed text-muted-foreground">
-                {"S "}
-                {won(m.price_s)}
-                {" / 원가 "}
-                {won(sCost)}
-                <br />
-                {"M "}
-                {won(m.price_m)}
-                {" / 원가 "}
-                {won(mCost)}
-                <br />
-                {"L "}
-                {won(m.price_l)}
-                {" / 원가 "}
-                {won(lCost)}
-                {hasP && (
+                {isSideOrDrink ? (
                   <>
-                    <br />
                     {"P(개수) "}
                     {won(m.price_p)}
                     {" / 원가 "}
-                    {won(pCost)}
+                    {won(calcRecipeCost(m, "P", recipes, ingredients))}
+                  </>
+                ) : (
+                  <>
+                    {"S "}
+                    {won(m.price_s)}
+                    {" / 원가 "}
+                    {won(calcRecipeCost(m, "S", recipes, ingredients))}
+                    <br />
+                    {"M "}
+                    {won(m.price_m)}
+                    {" / 원가 "}
+                    {won(calcRecipeCost(m, "M", recipes, ingredients))}
+                    <br />
+                    {"L "}
+                    {won(m.price_l)}
+                    {" / 원가 "}
+                    {won(calcRecipeCost(m, "L", recipes, ingredients))}
                   </>
                 )}
               </div>
