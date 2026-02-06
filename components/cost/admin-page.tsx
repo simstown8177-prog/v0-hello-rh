@@ -13,7 +13,7 @@ import type {
 } from "@/lib/types"
 import { toNumber, won, calcRecipeCost } from "@/lib/calc"
 import type { KeyedMutator } from "swr"
-import * as XLSX from "xlsx"
+import readXlsxFile from "read-excel-file"
 
 type Tab = "menus" | "platform" | "options" | "ingredients"
 
@@ -44,81 +44,81 @@ function col(row: Record<string, unknown>, keys: string[]): unknown {
   return undefined
 }
 
-/** Find a sheet by trying multiple names (case-insensitive) */
-function findSheet(wb: XLSX.WorkBook, names: string[]) {
-  for (const n of names) {
-    const found = wb.SheetNames.find(
-      (sn) => sn.toLowerCase().replace(/\s/g, "") === n.toLowerCase().replace(/\s/g, "")
+/** Find a matching sheet name from a list of alternatives */
+function findSheetName(sheetNames: string[], aliases: string[]): string | undefined {
+  for (const alias of aliases) {
+    const found = sheetNames.find(
+      (sn) => sn.toLowerCase().replace(/\s/g, "") === alias.toLowerCase().replace(/\s/g, "")
     )
-    if (found) return wb.Sheets[found]
+    if (found) return found
   }
   return undefined
 }
 
-/** Download sample Excel template */
+/** Parse a sheet (array of row arrays) into Record objects using the first row as headers */
+function sheetToRecords(rows: (string | number | boolean | null | Date)[][]): Record<string, unknown>[] {
+  if (rows.length < 2) return []
+  const headers = rows[0].map((h) => String(h ?? "").trim())
+  return rows.slice(1).map((row) => {
+    const obj: Record<string, unknown> = {}
+    for (let i = 0; i < headers.length; i++) {
+      if (headers[i]) obj[headers[i]] = row[i]
+    }
+    return obj
+  })
+}
+
+/** Download sample Excel template as CSV (one file per sheet concept) */
 function downloadSampleExcel() {
-  const wb = XLSX.utils.book_new()
+  const content = `=== 원가계산기 엑셀 양식 안내 ===
 
-  // Menus sheet (with category column)
-  const menuData = [
-    { menu: "페퍼로니 피자", category: "피자", size: "S", price: 15000 },
-    { menu: "페퍼로니 피자", category: "피자", size: "M", price: 18000 },
-    { menu: "페퍼로니 피자", category: "피자", size: "L", price: 22000 },
-    { menu: "마르게리타 피자", category: "피자", size: "S", price: 14000 },
-    { menu: "마르게리타 피자", category: "피자", size: "M", price: 17000 },
-    { menu: "마르게리타 피자", category: "피자", size: "L", price: 21000 },
-    { menu: "1인 불고기 피자", category: "1인피자", size: "S", price: 9000 },
-    { menu: "패밀리 세트A", category: "세트메뉴", size: "S", price: 35000 },
-    { menu: "치즈스틱", category: "사이드", size: "S", price: 5000 },
-    { menu: "콜라 500ml", category: "음료", size: "S", price: 2000 },
-  ]
-  const wsMenus = XLSX.utils.json_to_sheet(menuData)
-  XLSX.utils.book_append_sheet(wb, wsMenus, "Menus")
+엑셀 파일(.xlsx)을 만들어주세요. 시트 4개를 각각 아래 이름으로 만들고, 첫 행에 컬럼명을 넣으세요.
 
-  // Ingredients sheet
-  const ingData = [
-    { name: "원두", totalQty: 1000, buyPrice: 15000 },
-    { name: "우유", totalQty: 1000, buyPrice: 3000 },
-    { name: "컵(S)", totalQty: 50, buyPrice: 5000 },
-    { name: "컵(M)", totalQty: 50, buyPrice: 6000 },
-    { name: "컵(L)", totalQty: 50, buyPrice: 7000 },
-  ]
-  const wsIng = XLSX.utils.json_to_sheet(ingData)
-  XLSX.utils.book_append_sheet(wb, wsIng, "Ingredients")
+---
+[시트1: Menus]
+menu,category,size,price
+페퍼로니 피자,피자,S,15000
+페퍼로니 피자,피자,M,18000
+페퍼로니 피자,피자,L,22000
+마르게리타 피자,피자,S,14000
+마르게리타 피자,피자,M,17000
+마르게리타 피자,피자,L,21000
+1인 불고기 피자,1인피자,S,9000
+패밀리 세트A,세트메뉴,S,35000
+치즈스틱,사이드,S,5000
+콜라 500ml,음료,S,2000
 
-  // Recipes sheet
-  const recipeData = [
-    { menu: "아메리카노", size: "S", ingredient: "원두", qty: 18 },
-    { menu: "아메리카노", size: "S", ingredient: "컵(S)", qty: 1 },
-    { menu: "아메리카노", size: "M", ingredient: "원두", qty: 22 },
-    { menu: "아메리카노", size: "M", ingredient: "컵(M)", qty: 1 },
-    { menu: "아메리카노", size: "L", ingredient: "원두", qty: 26 },
-    { menu: "아메리카노", size: "L", ingredient: "컵(L)", qty: 1 },
-    { menu: "카페라떼", size: "S", ingredient: "원두", qty: 18 },
-    { menu: "카페라떼", size: "S", ingredient: "우유", qty: 150 },
-    { menu: "카페라떼", size: "S", ingredient: "컵(S)", qty: 1 },
-    { menu: "카페라떼", size: "M", ingredient: "원두", qty: 22 },
-    { menu: "카페라떼", size: "M", ingredient: "우유", qty: 200 },
-    { menu: "카페라떼", size: "M", ingredient: "컵(M)", qty: 1 },
-    { menu: "카페라떼", size: "L", ingredient: "원두", qty: 26 },
-    { menu: "카페라떼", size: "L", ingredient: "우유", qty: 250 },
-    { menu: "카페라떼", size: "L", ingredient: "컵(L)", qty: 1 },
-  ]
-  const wsRecipes = XLSX.utils.json_to_sheet(recipeData)
-  XLSX.utils.book_append_sheet(wb, wsRecipes, "Recipes")
+---
+[시트2: Ingredients]
+name,totalQty,buyPrice
+도우,1000,12000
+모짜렐라,1000,15000
+페퍼로니,500,8000
+토마토소스,2000,6000
 
-  // Options sheet
-  const optData = [
-    { name: "샷 추가", groupId: "TOPPING", type: "check_qty", priceDelta: 500, costDelta: 200, maxQty: 4, enabled: true },
-    { name: "시럽 추가", groupId: "TOPPING", type: "check_qty", priceDelta: 300, costDelta: 100, maxQty: 4, enabled: true },
-    { name: "휘핑크림", groupId: "TOPPING", type: "check", priceDelta: 500, costDelta: 200, maxQty: 1, enabled: true },
-    { name: "ICE", groupId: "TEMP", type: "radio", priceDelta: 0, costDelta: 0, maxQty: 1, enabled: true },
-    { name: "HOT", groupId: "TEMP", type: "radio", priceDelta: 0, costDelta: 0, maxQty: 1, enabled: true },
-  ]
-  const wsOpt = XLSX.utils.json_to_sheet(optData)
-  XLSX.utils.book_append_sheet(wb, wsOpt, "Options")
+---
+[시트3: Recipes]
+menu,size,ingredient,qty
+페퍼로니 피자,S,도우,200
+페퍼로니 피자,S,모짜렐라,100
+페퍼로니 피자,S,페퍼로니,50
+페퍼로니 피자,S,토마토소스,80
 
-  XLSX.writeFile(wb, "원가계산기_샘플.xlsx")
+---
+[시트4: Options]
+name,groupId,type,priceDelta,costDelta,maxQty,enabled
+치즈추가,TOPPING,check,2000,800,1,true
+페퍼로니추가,TOPPING,check,1500,500,1,true
+ICE,TEMP,radio,0,0,1,true
+HOT,TEMP,radio,0,0,1,true
+`
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = "원가계산기_양식안내.txt"
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export function AdminPage({
@@ -140,21 +140,20 @@ export function AdminPage({
     setUploading(true)
 
     try {
-      const data = await f.arrayBuffer()
-      const wb = XLSX.read(data)
+      // Get all sheet names
+      const { getSheetNames } = await import("read-excel-file")
+      const sheetNames = await getSheetNames(f)
 
       const newMenus: Menu[] = []
       const newRecipes: Recipe[] = []
       const newIngredients: Ingredient[] = []
       const newOptions: Option[] = []
 
-      console.log("[v0] Excel sheets found:", wb.SheetNames)
-
-      // Menus sheet - try multiple names
-      const menuSheet = findSheet(wb, ["Menus", "메뉴", "Menu", "메뉴설정"])
-      if (menuSheet) {
-        const rows = XLSX.utils.sheet_to_json(menuSheet) as Record<string, unknown>[]
-        console.log("[v0] Menus sheet columns:", rows[0] ? Object.keys(rows[0]) : "empty")
+      // Menus sheet
+      const menuSheetName = findSheetName(sheetNames, ["Menus", "메뉴", "Menu", "메뉴설정"])
+      if (menuSheetName) {
+        const rawRows = await readXlsxFile(f, { sheet: menuSheetName })
+        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
         const map = new Map<string, Menu>()
         for (const r of rows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명", "name", "이름"]) ?? "").trim()
@@ -179,14 +178,13 @@ export function AdminPage({
           if (size === "L") m.price_l = price
         }
         newMenus.push(...map.values())
-        console.log("[v0] Parsed menus:", newMenus.length)
       }
 
       // Ingredients sheet
-      const ingSheet = findSheet(wb, ["Ingredients", "재료", "단가", "재료단가", "Ingredient"])
-      if (ingSheet) {
-        const rows = XLSX.utils.sheet_to_json(ingSheet) as Record<string, unknown>[]
-        console.log("[v0] Ingredients sheet columns:", rows[0] ? Object.keys(rows[0]) : "empty")
+      const ingSheetName = findSheetName(sheetNames, ["Ingredients", "재료", "단가", "재료단가", "Ingredient"])
+      if (ingSheetName) {
+        const rawRows = await readXlsxFile(f, { sheet: ingSheetName })
+        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
         for (const r of rows) {
           const name = String(col(r, ["name", "재료명", "이름", "재료", "Name"]) ?? "").trim()
           if (!name) continue
@@ -197,14 +195,13 @@ export function AdminPage({
             buy_price: toNumber(col(r, ["buyPrice", "구매가", "buy_price", "가격", "BuyPrice"]), 0),
           })
         }
-        console.log("[v0] Parsed ingredients:", newIngredients.length)
       }
 
       // Recipes sheet
-      const recipeSheet = findSheet(wb, ["Recipes", "레시피", "Recipe", "레시피설정"])
-      if (recipeSheet) {
-        const rows = XLSX.utils.sheet_to_json(recipeSheet) as Record<string, unknown>[]
-        console.log("[v0] Recipes sheet columns:", rows[0] ? Object.keys(rows[0]) : "empty")
+      const recipeSheetName = findSheetName(sheetNames, ["Recipes", "레시피", "Recipe", "레시피설정"])
+      if (recipeSheetName) {
+        const rawRows = await readXlsxFile(f, { sheet: recipeSheetName })
+        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
         for (const r of rows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명"]) ?? "").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
@@ -223,14 +220,13 @@ export function AdminPage({
             qty,
           })
         }
-        console.log("[v0] Parsed recipes:", newRecipes.length)
       }
 
       // Options sheet
-      const optSheet = findSheet(wb, ["Options", "옵션", "Option", "옵션설정"])
-      if (optSheet) {
-        const rows = XLSX.utils.sheet_to_json(optSheet) as Record<string, unknown>[]
-        console.log("[v0] Options sheet columns:", rows[0] ? Object.keys(rows[0]) : "empty")
+      const optSheetName = findSheetName(sheetNames, ["Options", "옵션", "Option", "옵션설정"])
+      if (optSheetName) {
+        const rawRows = await readXlsxFile(f, { sheet: optSheetName })
+        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
         for (const r of rows) {
           const name = String(col(r, ["name", "옵션명", "이름", "Name"]) ?? "").trim()
           const groupId = String(col(r, ["groupId", "그룹", "group_id", "그룹ID", "GroupId"]) ?? "").trim()
@@ -249,16 +245,15 @@ export function AdminPage({
             })(),
           })
         }
-        console.log("[v0] Parsed options:", newOptions.length)
       }
 
       if (newMenus.length === 0 && newIngredients.length === 0 && newOptions.length === 0) {
-        const sheetList = wb.SheetNames.join(", ")
+        const sheetList = sheetNames.join(", ")
         alert(
           `업로드할 유효한 데이터가 없습니다.\n\n` +
           `현재 엑셀 시트: ${sheetList}\n\n` +
           `필요한 시트명: Menus(메뉴), Ingredients(재료), Recipes(레시피), Options(옵션)\n\n` +
-          `"샘플 엑셀 다운로드" 버튼으로 올바른 형식을 확인하세요.`
+          `"양식 안내 다운로드" 버튼으로 올바른 형식을 확인하세요.`
         )
         return
       }
@@ -299,7 +294,7 @@ export function AdminPage({
             onClick={downloadSampleExcel}
             className="rounded-xl border border-primary/30 bg-accent px-3 py-2.5 text-sm font-black text-accent-foreground transition-colors hover:bg-accent/80"
           >
-            샘플 엑셀 다운로드
+            양식 안내 다운로드
           </button>
           <input
             ref={fileRef}
@@ -328,7 +323,7 @@ export function AdminPage({
             {"* 컬럼명은 영문/한글 모두 지원 (예: menu/메뉴, price/판매가, name/재료명)"}
           </p>
           <p>
-            {"* 처음이면 \"샘플 엑셀 다운로드\"를 눌러서 정확한 양식을 확인하세요"}
+            {"* 처음이면 \"양식 안내 다운로드\"를 눌러서 정확한 양식을 확인하세요"}
           </p>
         </div>
       </div>
@@ -414,6 +409,7 @@ function AdminMenus({
       {
         id: crypto.randomUUID(),
         name,
+        category: "전체" as Menu["category"],
         price_s: 0,
         price_m: 0,
         price_l: 0,
@@ -605,7 +601,7 @@ function AdminPlatforms({
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <div>
                 <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                  {"플랫폼 수수료율"}
+                  {"플��폼 수수료율"}
                 </label>
                 <input
                   type="number"
