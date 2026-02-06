@@ -5,9 +5,13 @@ export interface Ingredient {
   buy_price: number
 }
 
+export const CATEGORIES = ["전체", "피자", "세트메뉴", "1인피자", "사이드", "음료"] as const
+export type Category = (typeof CATEGORIES)[number]
+
 export interface Menu {
   id: string
   name: string
+  category: Category
   price_s: number
   price_m: number
   price_l: number

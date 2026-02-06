@@ -59,14 +59,18 @@ function findSheet(wb: XLSX.WorkBook, names: string[]) {
 function downloadSampleExcel() {
   const wb = XLSX.utils.book_new()
 
-  // Menus sheet
+  // Menus sheet (with category column)
   const menuData = [
-    { menu: "아메리카노", size: "S", price: 3500 },
-    { menu: "아메리카노", size: "M", price: 4000 },
-    { menu: "아메리카노", size: "L", price: 4500 },
-    { menu: "카페라떼", size: "S", price: 4000 },
-    { menu: "카페라떼", size: "M", price: 4500 },
-    { menu: "카페라떼", size: "L", price: 5000 },
+    { menu: "페퍼로니 피자", category: "피자", size: "S", price: 15000 },
+    { menu: "페퍼로니 피자", category: "피자", size: "M", price: 18000 },
+    { menu: "페퍼로니 피자", category: "피자", size: "L", price: 22000 },
+    { menu: "마르게리타 피자", category: "피자", size: "S", price: 14000 },
+    { menu: "마르게리타 피자", category: "피자", size: "M", price: 17000 },
+    { menu: "마르게리타 피자", category: "피자", size: "L", price: 21000 },
+    { menu: "1인 불고기 피자", category: "1인피자", size: "S", price: 9000 },
+    { menu: "패밀리 세트A", category: "세트메뉴", size: "S", price: 35000 },
+    { menu: "치즈스틱", category: "사이드", size: "S", price: 5000 },
+    { menu: "콜라 500ml", category: "음료", size: "S", price: 2000 },
   ]
   const wsMenus = XLSX.utils.json_to_sheet(menuData)
   XLSX.utils.book_append_sheet(wb, wsMenus, "Menus")
@@ -154,6 +158,7 @@ export function AdminPage({
         const map = new Map<string, Menu>()
         for (const r of rows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명", "name", "이름"]) ?? "").trim()
+          const category = String(col(r, ["category", "카테고리", "분류", "Category"]) ?? "전체").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
           const price = toNumber(col(r, ["price", "판매가", "가격", "Price"]), 0)
           if (!menuName || !["S", "M", "L"].includes(size)) continue
@@ -162,6 +167,7 @@ export function AdminPage({
             map.set(menuName, {
               id: crypto.randomUUID(),
               name: menuName,
+              category: category as Menu["category"],
               price_s: 0,
               price_m: 0,
               price_l: 0,

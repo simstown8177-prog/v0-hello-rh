@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import type { Menu, Recipe, Ingredient } from "@/lib/types"
+import { useRef, useState } from "react"
+import type { Menu, Recipe, Ingredient, Category } from "@/lib/types"
+import { CATEGORIES } from "@/lib/types"
 import { calcRecipeCost, won } from "@/lib/calc"
 
 interface MenuPickerProps {
@@ -20,8 +21,11 @@ export function MenuPicker({
   onSelectMenu,
 }: MenuPickerProps) {
   const [search, setSearch] = useState("")
+  const [activeCategory, setActiveCategory] = useState<Category>("전체")
+  const catScrollRef = useRef<HTMLDivElement>(null)
 
   const filtered = menus.filter((m) => {
+    if (activeCategory !== "전체" && m.category !== activeCategory) return false
     if (!search.trim()) return true
     const q = search.trim()
     if (m.name.includes(q)) return true
@@ -30,7 +34,43 @@ export function MenuPicker({
 
   return (
     <div className="mt-3 rounded-2xl border border-border bg-card p-3 shadow-sm">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Category slider */}
+      <div
+        ref={catScrollRef}
+        className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin"
+      >
+        {CATEGORIES.map((cat) => {
+          const isActive = cat === activeCategory
+          const count =
+            cat === "전체"
+              ? menus.length
+              : menus.filter((m) => m.category === cat).length
+          return (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setActiveCategory(cat)}
+              className={`snap-start flex-shrink-0 rounded-full px-4 py-2 text-sm font-black transition-colors whitespace-nowrap ${
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "border border-border bg-card text-foreground hover:bg-muted"
+              }`}
+            >
+              {cat}
+              <span
+                className={`ml-1.5 text-xs ${
+                  isActive ? "text-primary-foreground/70" : "text-muted-foreground"
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Search */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={search}
@@ -47,6 +87,7 @@ export function MenuPicker({
         </span>
       </div>
 
+      {/* Menu cards */}
       <div className="mt-2.5 flex gap-2.5 overflow-x-auto pb-1.5 snap-x snap-mandatory scrollbar-thin">
         {filtered.map((m) => {
           const sCost = calcRecipeCost(m, "S", recipes, ingredients)
@@ -65,7 +106,14 @@ export function MenuPicker({
                   : "border-border bg-card hover:border-primary/40"
               }`}
             >
-              <div className="text-sm font-black text-foreground">{m.name}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-black text-foreground">{m.name}</span>
+                {m.category !== "전체" && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-black text-muted-foreground">
+                    {m.category}
+                  </span>
+                )}
+              </div>
               <div className="mt-1.5 text-xs font-bold leading-relaxed text-muted-foreground">
                 {"S "}
                 {won(m.price_s)}
