@@ -10,7 +10,9 @@ import type {
   Option,
   Platform,
   OptionGroup,
+  Category,
 } from "@/lib/types"
+import { CATEGORIES } from "@/lib/types"
 import { toNumber, won, calcRecipeCost } from "@/lib/calc"
 import type { KeyedMutator } from "swr"
 import readXlsxFile from "read-excel-file"
@@ -140,24 +142,64 @@ export function AdminPage({
     setUploading(true)
 
     try {
-      // Get all sheet names
-      const { getSheetNames } = await import("read-excel-file")
-      const sheetNames = await getSheetNames(f)
+      // Get all sheet names using dynamic import
+      const readModule = await import("read-excel-file")
+      const getSheetNames = readModule.getSheetNames || readModule.default?.getSheetNames
+      const readFile = readModule.default || readModule
+
+      let sheetNames: string[] = []
+      try {
+        if (getSheetNames) {
+          sheetNames = await getSheetNames(f)
+        }
+      } catch (sheetErr) {
+        console.log("[v0] getSheetNames failed, trying fallback:", sheetErr)
+      }
+
+      // If getSheetNames failed or returned empty, try common sheet names directly
+      if (sheetNames.length === 0) {
+        sheetNames = ["Sheet1", "Sheet2", "Sheet3", "Sheet4", "Menus", "Ingredients", "Recipes", "Options", "메뉴", "재료", "레시피", "옵션"]
+      }
+
+      console.log("[v0] Sheet names found:", sheetNames)
 
       const newMenus: Menu[] = []
       const newRecipes: Recipe[] = []
       const newIngredients: Ingredient[] = []
       const newOptions: Option[] = []
 
-      // Menus sheet
+      // Helper to safely read a sheet
+      async function safeReadSheet(file: File, sheetNameOrIndex: string | number) {
+        try {
+          const rawRows = await readFile(file, { sheet: sheetNameOrIndex })
+          return sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
+        } catch {
+          return []
+        }
+      }
+
+      // Try to find and read Menus sheet
+      let menuRows: Record<string, unknown>[] = []
       const menuSheetName = findSheetName(sheetNames, ["Menus", "메뉴", "Menu", "메뉴설정"])
       if (menuSheetName) {
-        const rawRows = await readXlsxFile(f, { sheet: menuSheetName })
-        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
+        menuRows = await safeReadSheet(f, menuSheetName)
+      }
+      // Fallback: try reading first sheet if no named sheet found
+      if (menuRows.length === 0) {
+        const firstSheetRows = await safeReadSheet(f, 1)
+        // Check if first sheet looks like a menus sheet
+        if (firstSheetRows.length > 0) {
+          const firstRow = firstSheetRows[0]
+          const hasMenuCol = col(firstRow, ["menu", "메뉴", "메뉴명", "name", "이름"]) !== undefined
+          if (hasMenuCol) menuRows = firstSheetRows
+        }
+      }
+      console.log("[v0] Menu rows found:", menuRows.length)
+      if (menuRows.length > 0) {
         const map = new Map<string, Menu>()
-        for (const r of rows) {
+        for (const r of menuRows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명", "name", "이름"]) ?? "").trim()
-          const category = String(col(r, ["category", "카테고리", "분류", "Category"]) ?? "전체").trim()
+          const category = String(col(r, ["category", "카테고리", "분류", "Category"]) ?? "전���").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
           const price = toNumber(col(r, ["price", "판매가", "가격", "Price"]), 0)
           if (!menuName || !["S", "M", "L"].includes(size)) continue
@@ -182,10 +224,18 @@ export function AdminPage({
 
       // Ingredients sheet
       const ingSheetName = findSheetName(sheetNames, ["Ingredients", "재료", "단가", "재료단가", "Ingredient"])
+      let ingRows: Record<string, unknown>[] = []
       if (ingSheetName) {
-        const rawRows = await readXlsxFile(f, { sheet: ingSheetName })
-        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
-        for (const r of rows) {
+        ingRows = await safeReadSheet(f, ingSheetName)
+      }
+      if (ingRows.length === 0) {
+        const sheet2Rows = await safeReadSheet(f, 2)
+        if (sheet2Rows.length > 0 && col(sheet2Rows[0], ["name", "재료명", "이름", "재료", "Name"]) !== undefined) {
+          ingRows = sheet2Rows
+        }
+      }
+      console.log("[v0] Ingredient rows found:", ingRows.length)
+      for (const r of ingRows) {
           const name = String(col(r, ["name", "재료명", "이름", "재료", "Name"]) ?? "").trim()
           if (!name) continue
           newIngredients.push({
@@ -194,15 +244,22 @@ export function AdminPage({
             total_qty: toNumber(col(r, ["totalQty", "총용량", "total_qty", "용량", "TotalQty"]), 0),
             buy_price: toNumber(col(r, ["buyPrice", "구매가", "buy_price", "가격", "BuyPrice"]), 0),
           })
-        }
       }
 
       // Recipes sheet
       const recipeSheetName = findSheetName(sheetNames, ["Recipes", "레시피", "Recipe", "레시피설정"])
+      let recipeRows: Record<string, unknown>[] = []
       if (recipeSheetName) {
-        const rawRows = await readXlsxFile(f, { sheet: recipeSheetName })
-        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
-        for (const r of rows) {
+        recipeRows = await safeReadSheet(f, recipeSheetName)
+      }
+      if (recipeRows.length === 0) {
+        const sheet3Rows = await safeReadSheet(f, 3)
+        if (sheet3Rows.length > 0 && col(sheet3Rows[0], ["menu", "메뉴", "메뉴명"]) !== undefined) {
+          recipeRows = sheet3Rows
+        }
+      }
+      console.log("[v0] Recipe rows found:", recipeRows.length)
+      for (const r of recipeRows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명"]) ?? "").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
           const ing = String(col(r, ["ingredient", "재료", "재료명"]) ?? "").trim()
@@ -219,15 +276,22 @@ export function AdminPage({
             ingredient_name: ing,
             qty,
           })
-        }
       }
 
       // Options sheet
       const optSheetName = findSheetName(sheetNames, ["Options", "옵션", "Option", "옵션설정"])
+      let optRows: Record<string, unknown>[] = []
       if (optSheetName) {
-        const rawRows = await readXlsxFile(f, { sheet: optSheetName })
-        const rows = sheetToRecords(rawRows as (string | number | boolean | null | Date)[][])
-        for (const r of rows) {
+        optRows = await safeReadSheet(f, optSheetName)
+      }
+      if (optRows.length === 0) {
+        const sheet4Rows = await safeReadSheet(f, 4)
+        if (sheet4Rows.length > 0 && col(sheet4Rows[0], ["name", "옵션명", "이름", "Name"]) !== undefined) {
+          optRows = sheet4Rows
+        }
+      }
+      console.log("[v0] Option rows found:", optRows.length)
+      for (const r of optRows) {
           const name = String(col(r, ["name", "옵션명", "이름", "Name"]) ?? "").trim()
           const groupId = String(col(r, ["groupId", "그룹", "group_id", "그룹ID", "GroupId"]) ?? "").trim()
           if (!name || !groupId) continue
@@ -244,7 +308,6 @@ export function AdminPage({
               return v !== false && v !== 0 && String(v) !== "false" && String(v) !== "0"
             })(),
           })
-        }
       }
 
       if (newMenus.length === 0 && newIngredients.length === 0 && newOptions.length === 0) {
@@ -268,8 +331,9 @@ export function AdminPage({
       await mutate()
       alert("엑셀 업로드 완료! DB에 저장되었습니다.")
     } catch (err) {
-      console.error(err)
-      alert("엑셀 업로드 실패: 파일 형식/시트명/컬럼명을 확인하세요.")
+      console.error("[v0] Excel upload error:", err)
+      const msg = err instanceof Error ? err.message : String(err)
+      alert(`엑셀 업로드 실패:\n${msg}\n\n.xlsx 형식인지, 시트명/컬럼명이 올바른지 확인하세요.`)
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ""
@@ -404,12 +468,16 @@ function AdminMenus({
   const addMenu = () => {
     const name = prompt("메뉴명")
     if (!name) return
+    const catChoices = CATEGORIES.filter((c) => c !== "전체")
+    const catInput = prompt(`카테고리를 선택하세요:\n${catChoices.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n\n번호 입력 (미입력 시 "전체")`)
+    const catIdx = catInput ? Number.parseInt(catInput, 10) - 1 : -1
+    const category = catIdx >= 0 && catIdx < catChoices.length ? catChoices[catIdx] : "전체"
     setLocalMenus((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         name,
-        category: "전체" as Menu["category"],
+        category: category as Menu["category"],
         price_s: 0,
         price_m: 0,
         price_l: 0,
@@ -473,8 +541,13 @@ function AdminMenus({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black text-foreground">
-                    {m.name}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-foreground">
+                      {m.name}
+                    </span>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">
+                      {m.category || "전체"}
+                    </span>
                   </div>
                   <div className="mt-1 text-xs font-bold text-muted-foreground">
                     {"원가(S/M/L): "}
@@ -494,7 +567,7 @@ function AdminMenus({
                 </button>
               </div>
 
-              <div className="mt-2.5 grid grid-cols-1 gap-2.5 md:grid-cols-4">
+              <div className="mt-2.5 grid grid-cols-1 gap-2.5 md:grid-cols-5">
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
                     메뉴명
@@ -505,6 +578,23 @@ function AdminMenus({
                     onChange={(e) => updateMenu(m.id, "name", e.target.value)}
                     className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
                   />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
+                    카테고리
+                  </label>
+                  <select
+                    value={m.category || "전체"}
+                    onChange={(e) => updateMenu(m.id, "category", e.target.value as Category)}
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                  >
+                    {CATEGORIES.filter((c) => c !== "전체").map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    <option value="전체">전체 (미분류)</option>
+                  </select>
                 </div>
                 {(["S", "M", "L"] as const).map((size) => (
                   <div key={size}>
@@ -851,7 +941,7 @@ function AdminOptions({
           disabled={saving}
           className="rounded-xl border border-primary bg-primary px-3 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? "저장 중..." : "DB에 저장"}
+          {saving ? "저장 중..." : "DB에 ��장"}
         </button>
         <span className="text-xs font-bold text-muted-foreground">
           {"옵션명/그룹/타입/판매가/원가를 관리"}
