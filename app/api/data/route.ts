@@ -4,13 +4,14 @@ import { NextResponse } from "next/server"
 export async function GET() {
   const supabase = await createClient()
 
-  const [ingredientsRes, menusRes, recipesRes, optionsRes, platformsRes] =
+  const [ingredientsRes, menusRes, recipesRes, optionsRes, platformsRes, optionMenuMapRes] =
     await Promise.all([
       supabase.from("ingredients").select("*").order("created_at"),
       supabase.from("menus").select("*").order("created_at"),
       supabase.from("recipes").select("*").order("created_at"),
       supabase.from("options").select("*").order("created_at"),
       supabase.from("platforms").select("*").order("created_at"),
+      supabase.from("option_menu_map").select("*"),
     ])
 
   return NextResponse.json({
@@ -19,6 +20,7 @@ export async function GET() {
     recipes: recipesRes.data ?? [],
     options: optionsRes.data ?? [],
     platforms: platformsRes.data ?? [],
+    optionMenuMap: optionMenuMapRes.data ?? [],
   })
 }
 
@@ -134,6 +136,26 @@ export async function POST(request: Request) {
           .neq("id", "00000000-0000-0000-0000-000000000000")
         if (options?.length) {
           const { error } = await supabase.from("options").insert(options)
+          if (error)
+            return NextResponse.json({ error: error.message }, { status: 400 })
+        }
+        return NextResponse.json({ success: true })
+      }
+
+      case "save_option_menu_map": {
+        const { mappings } = payload as { mappings: { option_id: string; menu_id: string }[] }
+        // Clear all existing mappings
+        await supabase
+          .from("option_menu_map")
+          .delete()
+          .neq("id", "00000000-0000-0000-0000-000000000000")
+        // Insert new mappings
+        if (mappings?.length) {
+          const rows = mappings.map((m) => ({
+            option_id: m.option_id,
+            menu_id: m.menu_id,
+          }))
+          const { error } = await supabase.from("option_menu_map").insert(rows)
           if (error)
             return NextResponse.json({ error: error.message }, { status: 400 })
         }
