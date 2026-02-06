@@ -9,6 +9,7 @@ import type {
   Option,
   Platform,
   OptionGroup,
+  OptionMenuMap,
 } from "@/lib/types"
 import { DEFAULT_GROUPS } from "@/lib/types"
 import type { CalcState } from "@/lib/calc"
@@ -47,6 +48,7 @@ export default function Home() {
   const recipes: Recipe[] = data?.recipes ?? []
   const options: Option[] = data?.options ?? []
   const platforms: Platform[] = data?.platforms ?? []
+  const optionMenuMap: OptionMenuMap[] = data?.optionMenuMap ?? []
   const groups: OptionGroup[] = DEFAULT_GROUPS
 
   useEffect(() => {
@@ -156,6 +158,8 @@ export default function Home() {
             options={options}
             calcState={calcState}
             setCalcState={setCalcState}
+            optionMenuMap={optionMenuMap}
+            selectedMenuId={selectedMenuId}
           />
 
           <OptionProfitTable result={result} groups={groups} />
@@ -183,6 +187,7 @@ export default function Home() {
             options={options}
             platforms={platforms}
             groups={groups}
+            optionMenuMap={optionMenuMap}
             mutate={mutate}
           />
         </div>

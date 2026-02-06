@@ -10,6 +10,7 @@ import type {
   Option,
   Platform,
   OptionGroup,
+  OptionMenuMap,
   Category,
 } from "@/lib/types"
 import { CATEGORIES } from "@/lib/types"
@@ -26,6 +27,7 @@ interface AdminPageProps {
   options: Option[]
   platforms: Platform[]
   groups: OptionGroup[]
+  optionMenuMap: OptionMenuMap[]
   mutate: KeyedMutator<unknown>
 }
 
@@ -131,6 +133,7 @@ export function AdminPage({
   options,
   platforms,
   groups,
+  optionMenuMap,
   mutate,
 }: AdminPageProps) {
   const [tab, setTab] = useState<Tab>("menus")
@@ -433,7 +436,7 @@ export function AdminPage({
           <AdminPlatforms platforms={platforms} mutate={mutate} />
         )}
         {tab === "options" && (
-          <AdminOptions options={options} groups={groups} mutate={mutate} />
+          <AdminOptions options={options} groups={groups} menus={menus} optionMenuMap={optionMenuMap} mutate={mutate} />
         )}
         {tab === "ingredients" && (
           <AdminIngredients ingredients={ingredients} mutate={mutate} />
@@ -959,20 +962,50 @@ function AdminIngredients({
 function AdminOptions({
   options,
   groups,
+  menus,
+  optionMenuMap,
   mutate,
 }: {
   options: Option[]
   groups: OptionGroup[]
+  menus: Menu[]
+  optionMenuMap: OptionMenuMap[]
   mutate: KeyedMutator<unknown>
 }) {
   const [local, setLocal] = useState(options)
   const [saving, setSaving] = useState(false)
+  // 메뉴 매핑 상태: { optionId: Set<menuId> }
+  const [menuMap, setMenuMap] = useState<Record<string, Set<string>>>(() => {
+    const map: Record<string, Set<string>> = {}
+    for (const m of optionMenuMap) {
+      if (!map[m.option_id]) map[m.option_id] = new Set()
+      map[m.option_id].add(m.menu_id)
+    }
+    return map
+  })
+  // 메뉴 매핑 편집 UI: 어떤 옵션의 매핑을 편집 중인지
+  const [editingOptionId, setEditingOptionId] = useState<string | null>(null)
+  // 일괄 메뉴 적용 UI
+  const [bulkSelectedOptionIds, setBulkSelectedOptionIds] = useState<Set<string>>(new Set())
+  const [bulkMenuSelections, setBulkMenuSelections] = useState<Set<string>>(new Set())
+  const [showBulkPanel, setShowBulkPanel] = useState(false)
 
   const optKey = options.map((o) => o.id).join(",")
+  const mapKey = optionMenuMap.map((m) => `${m.option_id}-${m.menu_id}`).join(",")
   const [prevKey, setPrevKey] = useState(optKey)
+  const [prevMapKey, setPrevMapKey] = useState(mapKey)
   if (optKey !== prevKey) {
     setLocal(options)
     setPrevKey(optKey)
+  }
+  if (mapKey !== prevMapKey) {
+    const map: Record<string, Set<string>> = {}
+    for (const m of optionMenuMap) {
+      if (!map[m.option_id]) map[m.option_id] = new Set()
+      map[m.option_id].add(m.menu_id)
+    }
+    setMenuMap(map)
+    setPrevMapKey(mapKey)
   }
 
   const groupIds = groups.map((g) => g.id)
@@ -996,6 +1029,11 @@ function AdminOptions({
   const remove = (id: string) => {
     if (!confirm("이 옵션을 삭제할까요?")) return
     setLocal((prev) => prev.filter((o) => o.id !== id))
+    setMenuMap((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
   }
 
   const update = (id: string, field: string, value: unknown) => {
@@ -1004,12 +1042,65 @@ function AdminOptions({
     )
   }
 
+  const toggleMenuForOption = (optionId: string, menuId: string) => {
+    setMenuMap((prev) => {
+      const next = { ...prev }
+      const set = new Set(next[optionId] ?? [])
+      if (set.has(menuId)) set.delete(menuId)
+      else set.add(menuId)
+      next[optionId] = set
+      return next
+    })
+  }
+
+  const toggleBulkOption = (optionId: string) => {
+    setBulkSelectedOptionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(optionId)) next.delete(optionId)
+      else next.add(optionId)
+      return next
+    })
+  }
+
+  const toggleBulkMenu = (menuId: string) => {
+    setBulkMenuSelections((prev) => {
+      const next = new Set(prev)
+      if (next.has(menuId)) next.delete(menuId)
+      else next.add(menuId)
+      return next
+    })
+  }
+
+  const applyBulkMenus = () => {
+    if (bulkSelectedOptionIds.size === 0) { alert("옵션을 먼저 선택하세요."); return }
+    if (bulkMenuSelections.size === 0) { alert("적용할 메뉴를 선택하세요."); return }
+    setMenuMap((prev) => {
+      const next = { ...prev }
+      for (const optId of bulkSelectedOptionIds) {
+        next[optId] = new Set(bulkMenuSelections)
+      }
+      return next
+    })
+    const count = bulkSelectedOptionIds.size
+    alert(`${count}개 옵션에 메뉴 매핑을 적용했습니다. "DB에 저장"을 눌러 반영하세요.`)
+    setBulkSelectedOptionIds(new Set())
+    setShowBulkPanel(false)
+  }
+
   const save = async () => {
     setSaving(true)
     await apiPost("save_options", { options: local })
+    // Save menu mappings
+    const mappings: { option_id: string; menu_id: string }[] = []
+    for (const [optId, menuIds] of Object.entries(menuMap)) {
+      for (const menuId of menuIds) {
+        mappings.push({ option_id: optId, menu_id: menuId })
+      }
+    }
+    await apiPost("save_option_menu_map", { mappings })
     await mutate()
     setSaving(false)
-    alert("옵션 저장 완료!")
+    alert("옵션 및 메뉴 매핑 저장 완료!")
   }
 
   return (
@@ -1024,19 +1115,114 @@ function AdminOptions({
         </button>
         <button
           type="button"
+          onClick={() => setShowBulkPanel(!showBulkPanel)}
+          className={`rounded-xl border px-3 py-2.5 text-sm font-black transition-colors ${
+            showBulkPanel
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:bg-muted"
+          }`}
+        >
+          {showBulkPanel ? "일괄 매핑 닫기" : "일괄 메뉴 매핑"}
+        </button>
+        <button
+          type="button"
           onClick={save}
           disabled={saving}
           className="rounded-xl border border-primary bg-primary px-3 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {saving ? "저장 중..." : "DB에 ��장"}
+          {saving ? "저장 중..." : "DB에 저장"}
         </button>
         <span className="text-xs font-bold text-muted-foreground">
-          {"옵션명/그룹/타입/판매가/원가를 관리"}
+          {"옵션 설정 + 메뉴별 옵션 매핑 관리"}
         </span>
       </div>
 
+      {/* Bulk menu mapping panel */}
+      {showBulkPanel && (
+        <div className="mb-3 rounded-2xl border border-dashed border-primary/40 bg-accent/30 p-3">
+          <div className="mb-2 text-xs font-black text-foreground">일괄 메뉴 매핑</div>
+          <p className="mb-3 text-[11px] font-bold text-muted-foreground">
+            {"1. 아래에서 적용할 옵션을 체크 -> 2. 적용할 메뉴를 체크 -> 3. \"선택 옵션에 적용\" 클릭"}
+          </p>
+
+          {/* Step 1: Select options */}
+          <div className="mb-3">
+            <div className="mb-1.5 text-[11px] font-black text-foreground">적용할 옵션 선택</div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (bulkSelectedOptionIds.size === local.length) setBulkSelectedOptionIds(new Set())
+                  else setBulkSelectedOptionIds(new Set(local.map((o) => o.id)))
+                }}
+                className="rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-bold text-foreground hover:bg-muted"
+              >
+                {bulkSelectedOptionIds.size === local.length ? "전체 해제" : "전체 선택"}
+              </button>
+              {local.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => toggleBulkOption(o.id)}
+                  className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors ${
+                    bulkSelectedOptionIds.has(o.id)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Step 2: Select menus */}
+          <div className="mb-3">
+            <div className="mb-1.5 text-[11px] font-black text-foreground">적용할 메뉴 선택</div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (bulkMenuSelections.size === menus.length) setBulkMenuSelections(new Set())
+                  else setBulkMenuSelections(new Set(menus.map((m) => m.id)))
+                }}
+                className="rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-bold text-foreground hover:bg-muted"
+              >
+                {bulkMenuSelections.size === menus.length ? "전체 해제" : "전체 선택"}
+              </button>
+              {menus.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => toggleBulkMenu(m.id)}
+                  className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors ${
+                    bulkMenuSelections.has(m.id)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {m.name}
+                  {m.category !== "전체" && (
+                    <span className="ml-1 text-[9px] text-muted-foreground">({m.category})</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Step 3: Apply */}
+          <button
+            type="button"
+            onClick={applyBulkMenus}
+            className="rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-black text-primary-foreground hover:bg-primary/90"
+          >
+            선택 옵션에 적용 ({bulkSelectedOptionIds.size}개 옵션 x {bulkMenuSelections.size}개 메뉴)
+          </button>
+        </div>
+      )}
+
       <div className="rounded-xl border border-border bg-muted/50 p-3 overflow-x-auto">
-        <div className="mb-2 grid min-w-[700px] grid-cols-[1.3fr_1fr_.8fr_.8fr_.8fr_.6fr_.5fr_auto] gap-2 text-xs font-black text-muted-foreground">
+        <div className="mb-2 grid min-w-[700px] grid-cols-[1.3fr_1fr_.8fr_.8fr_.8fr_.6fr_.5fr_auto_auto] gap-2 text-xs font-black text-muted-foreground">
           <div>옵션명</div>
           <div>그룹</div>
           <div>타입</div>
@@ -1044,82 +1230,151 @@ function AdminOptions({
           <div>원가</div>
           <div>최대수량</div>
           <div>ON</div>
+          <div>메뉴매핑</div>
           <div />
         </div>
 
-        {local.map((o) => (
-          <div
-            key={o.id}
-            className="mt-2 grid min-w-[700px] grid-cols-[1.3fr_1fr_.8fr_.8fr_.8fr_.6fr_.5fr_auto] items-center gap-2"
-          >
-            <input
-              type="text"
-              value={o.name}
-              onChange={(e) => update(o.id, "name", e.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
-            />
-            <select
-              value={o.group_id}
-              onChange={(e) => update(o.id, "group_id", e.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
-            >
-              {groupIds.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-            <select
-              value={o.type}
-              onChange={(e) => update(o.id, "type", e.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
-            >
-              <option value="radio">radio</option>
-              <option value="check">check</option>
-              <option value="check_qty">qty</option>
-            </select>
-            <input
-              type="number"
-              value={o.price_delta}
-              onChange={(e) =>
-                update(o.id, "price_delta", toNumber(e.target.value, 0))
-              }
-              className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
-            />
-            <input
-              type="number"
-              value={o.cost_delta}
-              onChange={(e) =>
-                update(o.id, "cost_delta", toNumber(e.target.value, 0))
-              }
-              className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
-            />
-            <input
-              type="number"
-              value={o.max_qty}
-              onChange={(e) =>
-                update(o.id, "max_qty", toNumber(e.target.value, 4))
-              }
-              className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
-            />
-            <div className="flex justify-center">
-              <input
-                type="checkbox"
-                checked={o.enabled}
-                onChange={(e) => update(o.id, "enabled", e.target.checked)}
-                className="h-[18px] w-[18px] accent-primary"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => remove(o.id)}
-              className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs font-black text-destructive hover:bg-destructive/10"
-            >
-              삭제
-            </button>
-          </div>
-        ))}
+        {local.map((o) => {
+          const mappedMenuIds = menuMap[o.id] ?? new Set<string>()
+          const mappedCount = mappedMenuIds.size
+          const isEditing = editingOptionId === o.id
+
+          return (
+            <React.Fragment key={o.id}>
+              <div className="mt-2 grid min-w-[700px] grid-cols-[1.3fr_1fr_.8fr_.8fr_.8fr_.6fr_.5fr_auto_auto] items-center gap-2">
+                <input
+                  type="text"
+                  value={o.name}
+                  onChange={(e) => update(o.id, "name", e.target.value)}
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                />
+                <select
+                  value={o.group_id}
+                  onChange={(e) => update(o.id, "group_id", e.target.value)}
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                >
+                  {groupIds.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+                <select
+                  value={o.type}
+                  onChange={(e) => update(o.id, "type", e.target.value)}
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                >
+                  <option value="radio">radio</option>
+                  <option value="check">check</option>
+                  <option value="check_qty">qty</option>
+                </select>
+                <input
+                  type="number"
+                  value={o.price_delta}
+                  onChange={(e) => update(o.id, "price_delta", toNumber(e.target.value, 0))}
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                />
+                <input
+                  type="number"
+                  value={o.cost_delta}
+                  onChange={(e) => update(o.id, "cost_delta", toNumber(e.target.value, 0))}
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                />
+                <input
+                  type="number"
+                  value={o.max_qty}
+                  onChange={(e) => update(o.id, "max_qty", toNumber(e.target.value, 4))}
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                />
+                <div className="flex justify-center">
+                  <input
+                    type="checkbox"
+                    checked={o.enabled}
+                    onChange={(e) => update(o.id, "enabled", e.target.checked)}
+                    className="h-[18px] w-[18px] accent-primary"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingOptionId(isEditing ? null : o.id)}
+                  className={`rounded-xl border px-3 py-2 text-xs font-black transition-colors ${
+                    isEditing
+                      ? "border-primary bg-primary/10 text-primary"
+                      : mappedCount > 0
+                        ? "border-primary/30 bg-accent text-accent-foreground"
+                        : "border-border bg-card text-muted-foreground"
+                  }`}
+                >
+                  {mappedCount > 0 ? `${mappedCount}개 메뉴` : "전체"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(o.id)}
+                  className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs font-black text-destructive hover:bg-destructive/10"
+                >
+                  삭제
+                </button>
+              </div>
+
+              {/* Inline menu mapping editor */}
+              {isEditing && (
+                <div className="mt-1 mb-2 ml-2 rounded-xl border border-primary/20 bg-primary/5 p-2.5">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[11px] font-black text-foreground">
+                      {`"${o.name}" 적용 메뉴 선택`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (mappedMenuIds.size === menus.length) {
+                          setMenuMap((prev) => ({ ...prev, [o.id]: new Set() }))
+                        } else {
+                          setMenuMap((prev) => ({ ...prev, [o.id]: new Set(menus.map((m) => m.id)) }))
+                        }
+                      }}
+                      className="rounded-md border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-foreground hover:bg-muted"
+                    >
+                      {mappedMenuIds.size === menus.length ? "전체 해제" : "전체 선택"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMenuMap((prev) => {
+                        const next = { ...prev }
+                        delete next[o.id]
+                        return next
+                      })}
+                      className="rounded-md border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-muted-foreground hover:bg-muted"
+                    >
+                      매핑 초기화 (전체 표시)
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {menus.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => toggleMenuForOption(o.id, m.id)}
+                        className={`rounded-md border px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                          mappedMenuIds.has(m.id)
+                            ? "border-primary bg-primary/15 text-primary"
+                            : "border-border bg-card text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                  {mappedMenuIds.size === 0 && (
+                    <p className="mt-1 text-[10px] font-bold text-muted-foreground">
+                      {"매핑 없음 = 모든 메뉴에 표시됩니다"}
+                    </p>
+                  )}
+                </div>
+              )}
+            </React.Fragment>
+          )
+        })}
       </div>
     </div>
   )
 }
+
+

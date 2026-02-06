@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import type { Option, OptionGroup } from "@/lib/types"
+import type { Option, OptionGroup, OptionMenuMap } from "@/lib/types"
 import type { CalcState } from "@/lib/calc"
 import { won, clamp, toNumber } from "@/lib/calc"
 
@@ -11,6 +11,8 @@ interface OptionSectionsProps {
   options: Option[]
   calcState: CalcState
   setCalcState: React.Dispatch<React.SetStateAction<CalcState>>
+  optionMenuMap: OptionMenuMap[]
+  selectedMenuId: string | null
 }
 
 export function OptionSections({
@@ -18,11 +20,27 @@ export function OptionSections({
   options,
   calcState,
   setCalcState,
+  optionMenuMap,
+  selectedMenuId,
 }: OptionSectionsProps) {
+  // 매핑 데이터가 있는 옵션만 선택된 메뉴에 해당하는 것 필터링
+  // 매핑이 아예 없는 옵션은 모든 메뉴에 표시 (하위 호환)
+  const optionIdsWithMapping = new Set(optionMenuMap.map((m) => m.option_id))
+  const allowedOptionIds = new Set(
+    optionMenuMap
+      .filter((m) => m.menu_id === selectedMenuId)
+      .map((m) => m.option_id)
+  )
+
+  const filteredOptions = options.filter((o) => {
+    if (!optionIdsWithMapping.has(o.id)) return true // 매핑 없으면 전체 표시
+    return allowedOptionIds.has(o.id)
+  })
+
   return (
     <div className="mt-3 flex flex-col gap-3">
       {groups.map((group) => {
-        const groupOpts = options.filter(
+        const groupOpts = filteredOptions.filter(
           (o) => o.group_id === group.id && o.enabled !== false
         )
         if (!groupOpts.length) return null

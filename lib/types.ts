@@ -45,6 +45,12 @@ export interface Platform {
   delivery_fee: number
 }
 
+export interface OptionMenuMap {
+  id: string
+  option_id: string
+  menu_id: string
+}
+
 export interface OptionGroup {
   id: string
   title: string

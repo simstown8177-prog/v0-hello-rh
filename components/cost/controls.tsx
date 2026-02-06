@@ -15,10 +15,13 @@ interface ControlsProps {
 
 const SIZE_LABELS: Record<string, string> = { S: "S", M: "M", L: "L", P: "P(개수)" }
 
-/** 사이드 카테고리는 P만, 그 외 카테고리는 S/M/L만 */
+/** 사이드/음료 카테고리는 P만, 그 외는 S/M/L */
 function getSizesForMenu(menu: Menu | null): ("S" | "M" | "L" | "P")[] {
   if (!menu) return ["S", "M", "L"]
-  if (menu.category === "사이드" || menu.category === "음료") return ["P"]
+  const cat = menu.category
+  if (cat === "사이드" || cat === "음료") return ["P"]
+  // price_p가 설정되어 있으면 P도 추가
+  if (menu.price_p > 0) return ["S", "M", "L", "P"]
   return ["S", "M", "L"]
 }
 const COUPONS = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
