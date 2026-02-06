@@ -87,8 +87,9 @@ menu,category,size,price
 마르게리타 피자,피자,L,21000
 1인 불고기 피자,1인피자,S,9000
 패밀리 세트A,세트메뉴,S,35000
-치즈스틱,사이드,S,5000
-콜라 500ml,음료,S,2000
+치즈스틱,사이드,P,5000
+감자튀김,사이드,P,4000
+콜라 500ml,음료,P,2000
 
 ---
 [시트2: Ingredients]
@@ -202,7 +203,7 @@ export function AdminPage({
           const category = String(col(r, ["category", "카테고리", "분류", "Category"]) ?? "전���").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
           const price = toNumber(col(r, ["price", "판매가", "가격", "Price"]), 0)
-          if (!menuName || !["S", "M", "L"].includes(size)) continue
+          if (!menuName || !["S", "M", "L", "P"].includes(size)) continue
 
           if (!map.has(menuName)) {
             map.set(menuName, {
@@ -212,12 +213,14 @@ export function AdminPage({
               price_s: 0,
               price_m: 0,
               price_l: 0,
+              price_p: 0,
             })
           }
           const m = map.get(menuName)!
           if (size === "S") m.price_s = price
           if (size === "M") m.price_m = price
           if (size === "L") m.price_l = price
+          if (size === "P") m.price_p = price
         }
         newMenus.push(...map.values())
       }
@@ -264,7 +267,7 @@ export function AdminPage({
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
           const ing = String(col(r, ["ingredient", "재료", "재료명"]) ?? "").trim()
           const qty = toNumber(col(r, ["qty", "수량", "용량", "Qty"]), 0)
-          if (!menuName || !["S", "M", "L"].includes(size) || !ing) continue
+          if (!menuName || !["S", "M", "L", "P"].includes(size) || !ing) continue
 
           const menu = newMenus.find((m) => m.name === menuName)
           if (!menu) continue
@@ -272,7 +275,7 @@ export function AdminPage({
           newRecipes.push({
             id: crypto.randomUUID(),
             menu_id: menu.id,
-            size: size as "S" | "M" | "L",
+            size: size as "S" | "M" | "L" | "P",
             ingredient_name: ing,
             qty,
           })
@@ -481,6 +484,7 @@ function AdminMenus({
         price_s: 0,
         price_m: 0,
         price_l: 0,
+        price_p: 0,
       },
     ])
   }
@@ -533,6 +537,7 @@ function AdminMenus({
           const sCost = calcRecipeCost(m, "S", localRecipes, ingredients)
           const mCost = calcRecipeCost(m, "M", localRecipes, ingredients)
           const lCost = calcRecipeCost(m, "L", localRecipes, ingredients)
+          const pCost = calcRecipeCost(m, "P", localRecipes, ingredients)
 
           return (
             <div
@@ -550,12 +555,14 @@ function AdminMenus({
                     </span>
                   </div>
                   <div className="mt-1 text-xs font-bold text-muted-foreground">
-                    {"원가(S/M/L): "}
+                    {"원가(S/M/L/P): "}
                     {won(sCost)}
                     {" / "}
                     {won(mCost)}
                     {" / "}
                     {won(lCost)}
+                    {" / "}
+                    {won(pCost)}
                   </div>
                 </div>
                 <button
@@ -567,7 +574,7 @@ function AdminMenus({
                 </button>
               </div>
 
-              <div className="mt-2.5 grid grid-cols-1 gap-2.5 md:grid-cols-5">
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
                     메뉴명
@@ -596,10 +603,10 @@ function AdminMenus({
                     <option value="전체">전체 (미분류)</option>
                   </select>
                 </div>
-                {(["S", "M", "L"] as const).map((size) => (
+                {(["S", "M", "L", "P"] as const).map((size) => (
                   <div key={size}>
                     <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
-                      {size}
+                      {size === "P" ? "P(개수)" : size}
                       {" 판매가"}
                     </label>
                     <input
@@ -609,7 +616,9 @@ function AdminMenus({
                           ? m.price_s
                           : size === "M"
                             ? m.price_m
-                            : m.price_l
+                            : size === "P"
+                              ? m.price_p
+                              : m.price_l
                       }
                       onChange={(e) =>
                         updateMenu(

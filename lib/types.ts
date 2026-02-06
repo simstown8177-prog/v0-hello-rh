@@ -15,12 +15,13 @@ export interface Menu {
   price_s: number
   price_m: number
   price_l: number
+  price_p: number
 }
 
 export interface Recipe {
   id: string
   menu_id: string
-  size: "S" | "M" | "L"
+  size: "S" | "M" | "L" | "P"
   ingredient_name: string
   qty: number
 }

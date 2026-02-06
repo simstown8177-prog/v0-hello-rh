@@ -93,6 +93,8 @@ export function MenuPicker({
           const sCost = calcRecipeCost(m, "S", recipes, ingredients)
           const mCost = calcRecipeCost(m, "M", recipes, ingredients)
           const lCost = calcRecipeCost(m, "L", recipes, ingredients)
+          const pCost = calcRecipeCost(m, "P", recipes, ingredients)
+          const hasP = m.price_p > 0
           const isSelected = m.id === selectedMenuId
 
           return (
@@ -129,6 +131,15 @@ export function MenuPicker({
                 {won(m.price_l)}
                 {" / 원가 "}
                 {won(lCost)}
+                {hasP && (
+                  <>
+                    <br />
+                    {"P(개수) "}
+                    {won(m.price_p)}
+                    {" / 원가 "}
+                    {won(pCost)}
+                  </>
+                )}
               </div>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 <span
