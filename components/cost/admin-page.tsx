@@ -501,6 +501,41 @@ function AdminMenus({
     )
   }
 
+  // Bulk category selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkCategory, setBulkCategory] = useState<string>("피자")
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    if (selectedIds.size === localMenus.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(localMenus.map((m) => m.id)))
+    }
+  }
+
+  const applyBulkCategory = () => {
+    if (selectedIds.size === 0) {
+      alert("먼저 메뉴를 선택하세요.")
+      return
+    }
+    setLocalMenus((prev) =>
+      prev.map((m) =>
+        selectedIds.has(m.id) ? { ...m, category: bulkCategory as Menu["category"] } : m
+      )
+    )
+    setSelectedIds(new Set())
+    alert(`${selectedIds.size}개 메뉴의 카테고리를 "${bulkCategory}"(으)로 변경했습니다. "DB에 저장"을 눌러 반영하세요.`)
+  }
+
   const save = async () => {
     setSaving(true)
     await apiPost("save_menus", { menus: localMenus, recipes: localRecipes })
@@ -532,6 +567,39 @@ function AdminMenus({
         </span>
       </div>
 
+      {/* Bulk category assignment */}
+      <div className="mb-3 rounded-2xl border border-dashed border-primary/40 bg-accent/30 p-3">
+        <div className="mb-2 text-xs font-black text-foreground">일괄 카테고리 변경</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={selectAll}
+            className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-muted"
+          >
+            {selectedIds.size === localMenus.length ? "전체 해제" : "전체 선택"}
+          </button>
+          <select
+            value={bulkCategory}
+            onChange={(e) => setBulkCategory(e.target.value)}
+            className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground outline-none"
+          >
+            {CATEGORIES.filter((c) => c !== "전체").map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={applyBulkCategory}
+            className="rounded-lg border border-primary bg-primary px-2.5 py-1.5 text-xs font-black text-primary-foreground hover:bg-primary/90"
+          >
+            선택 메뉴에 적용 ({selectedIds.size}개)
+          </button>
+          <span className="text-[10px] font-bold text-muted-foreground">
+            {"메뉴 왼쪽 체크박스로 선택 후 카테고리를 일괄 변경할 수 있습니다"}
+          </span>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-2.5">
         {localMenus.map((m) => {
           const isSideOrDrink = m.category === "사이드" || m.category === "음료"
@@ -542,6 +610,12 @@ function AdminMenus({
               className="rounded-2xl border border-border bg-background p-3"
             >
               <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(m.id)}
+                  onChange={() => toggleSelect(m.id)}
+                  className="h-4 w-4 shrink-0 accent-primary"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-black text-foreground">
