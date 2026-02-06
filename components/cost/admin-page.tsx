@@ -10,7 +10,9 @@ import type {
   Option,
   Platform,
   OptionGroup,
+  Category,
 } from "@/lib/types"
+import { CATEGORIES } from "@/lib/types"
 import { toNumber, won, calcRecipeCost } from "@/lib/calc"
 import type { KeyedMutator } from "swr"
 import readXlsxFile from "read-excel-file"
@@ -157,7 +159,7 @@ export function AdminPage({
         const map = new Map<string, Menu>()
         for (const r of rows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명", "name", "이름"]) ?? "").trim()
-          const category = String(col(r, ["category", "카테고리", "분류", "Category"]) ?? "전체").trim()
+          const category = String(col(r, ["category", "카테고리", "분류", "Category"]) ?? "전���").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
           const price = toNumber(col(r, ["price", "판매가", "가격", "Price"]), 0)
           if (!menuName || !["S", "M", "L"].includes(size)) continue
@@ -404,12 +406,16 @@ function AdminMenus({
   const addMenu = () => {
     const name = prompt("메뉴명")
     if (!name) return
+    const catChoices = CATEGORIES.filter((c) => c !== "전체")
+    const catInput = prompt(`카테고리를 선택하세요:\n${catChoices.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n\n번호 입력 (미입력 시 "전체")`)
+    const catIdx = catInput ? Number.parseInt(catInput, 10) - 1 : -1
+    const category = catIdx >= 0 && catIdx < catChoices.length ? catChoices[catIdx] : "전체"
     setLocalMenus((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         name,
-        category: "전체" as Menu["category"],
+        category: category as Menu["category"],
         price_s: 0,
         price_m: 0,
         price_l: 0,
@@ -473,8 +479,13 @@ function AdminMenus({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black text-foreground">
-                    {m.name}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-foreground">
+                      {m.name}
+                    </span>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">
+                      {m.category || "전체"}
+                    </span>
                   </div>
                   <div className="mt-1 text-xs font-bold text-muted-foreground">
                     {"원가(S/M/L): "}
@@ -494,7 +505,7 @@ function AdminMenus({
                 </button>
               </div>
 
-              <div className="mt-2.5 grid grid-cols-1 gap-2.5 md:grid-cols-4">
+              <div className="mt-2.5 grid grid-cols-1 gap-2.5 md:grid-cols-5">
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
                     메뉴명
@@ -505,6 +516,23 @@ function AdminMenus({
                     onChange={(e) => updateMenu(m.id, "name", e.target.value)}
                     className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
                   />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold text-muted-foreground">
+                    카테고리
+                  </label>
+                  <select
+                    value={m.category || "전체"}
+                    onChange={(e) => updateMenu(m.id, "category", e.target.value as Category)}
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                  >
+                    {CATEGORIES.filter((c) => c !== "전체").map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    <option value="전체">전체 (미분류)</option>
+                  </select>
                 </div>
                 {(["S", "M", "L"] as const).map((size) => (
                   <div key={size}>
