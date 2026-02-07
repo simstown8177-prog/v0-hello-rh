@@ -18,7 +18,7 @@ import { toNumber, won, calcRecipeCost } from "@/lib/calc"
 import type { KeyedMutator } from "swr"
 import readXlsxFile from "read-excel-file"
 
-type Tab = "menus" | "platform" | "options" | "ingredients"
+type Tab = "menus" | "recipes" | "platform" | "options" | "ingredients"
 
 interface AdminPageProps {
   ingredients: Ingredient[]
@@ -102,12 +102,25 @@ name,totalQty,buyPrice
 토마토소스,2000,6000
 
 ---
-[시트3: Recipes]
+[시트3: Recipes / 레시피]
+방법1) 사이즈 컬럼 포함:
 menu,size,ingredient,qty
 페퍼로니 피자,S,도우,200
 페퍼로니 피자,S,모짜렐라,100
-페퍼로니 피자,S,페퍼로니,50
-페퍼로니 피자,S,토마토소스,80
+페퍼로니 피자,M,도우,250
+페퍼로니 피자,M,모짜렐라,150
+
+방법2) 메뉴명에 사이즈 포함 (이미지 형식):
+메뉴명,식자재명,용량
+충성콤비네이션M,우유도우M,220
+,피자소스,70
+,피자치즈,200
+,양파,30
+충성콤비네이션L,우유도우L,300
+,피자소스,100
+,피자치즈,280
+* 메뉴명 끝에 S/M/L/P 붙이면 사이즈 자동 인식
+* 메뉴명이 비어있으면 위 메뉴에 포함됨 (셀 병합 OK)
 
 ---
 [시트4: Options]
@@ -252,7 +265,11 @@ export function AdminPage({
           })
       }
 
-      // Recipes sheet
+      // Recipes sheet - supports two formats:
+      // Format 1 (column-based): menu, size, ingredient, qty
+      // Format 2 (image-style): 메뉴명(merged), 식자재명, 용량, 단가, g당단가
+      //   - Menu name in first column, may be merged/empty for subsequent rows
+      //   - Menu name may contain size suffix like "충성콤비네이션M" -> name="충성콤비네이션", size="M"
       const recipeSheetName = findSheetName(sheetNames, ["Recipes", "레시피", "Recipe", "레시피설정"])
       let recipeRows: Record<string, unknown>[] = []
       if (recipeSheetName) {
@@ -260,19 +277,28 @@ export function AdminPage({
       }
       if (recipeRows.length === 0) {
         const sheet3Rows = await safeReadSheet(f, 3)
-        if (sheet3Rows.length > 0 && col(sheet3Rows[0], ["menu", "메뉴", "메뉴명"]) !== undefined) {
-          recipeRows = sheet3Rows
+        if (sheet3Rows.length > 0) {
+          const firstRow = sheet3Rows[0]
+          const hasMenuCol = col(firstRow, ["menu", "메뉴", "메뉴명"]) !== undefined
+          const hasIngCol = col(firstRow, ["ingredient", "재료", "재료명", "식자재명", "식자재"]) !== undefined
+          if (hasMenuCol || hasIngCol) recipeRows = sheet3Rows
         }
       }
       console.log("[v0] Recipe rows found:", recipeRows.length)
-      for (const r of recipeRows) {
+
+      // Detect format: if "size" column exists -> Format 1, otherwise -> Format 2
+      const hasSizeCol = recipeRows.length > 0 && col(recipeRows[0], ["size", "사이즈", "SIZE"]) !== undefined
+
+      if (hasSizeCol) {
+        // Format 1: explicit size column
+        for (const r of recipeRows) {
           const menuName = String(col(r, ["menu", "메뉴", "메뉴명"]) ?? "").trim()
           const size = String(col(r, ["size", "사이즈", "SIZE"]) ?? "").trim().toUpperCase()
-          const ing = String(col(r, ["ingredient", "재료", "재료명"]) ?? "").trim()
+          const ing = String(col(r, ["ingredient", "재료", "재료명", "식자재명", "식자재"]) ?? "").trim()
           const qty = toNumber(col(r, ["qty", "수량", "용량", "Qty"]), 0)
           if (!menuName || !["S", "M", "L", "P"].includes(size) || !ing) continue
 
-          const menu = newMenus.find((m) => m.name === menuName)
+          const menu = newMenus.find((m) => m.name === menuName) ?? menus.find((m) => m.name === menuName)
           if (!menu) continue
 
           newRecipes.push({
@@ -282,6 +308,49 @@ export function AdminPage({
             ingredient_name: ing,
             qty,
           })
+        }
+      } else {
+        // Format 2: menu name in first column (may be merged), size embedded in name
+        // e.g., "충성콤비네이션M" -> name="충성콤비네이션", size="M"
+        let currentMenuName = ""
+        let currentSize: "S" | "M" | "L" | "P" = "M"
+        let currentMenuId = ""
+
+        // Get the first column key dynamically (it might be empty string or any name)
+        const firstColKey = recipeRows.length > 0 ? Object.keys(recipeRows[0])[0] : ""
+
+        for (const r of recipeRows) {
+          // Try known keys first, then fall back to first column
+          const rawMenu = String(col(r, ["menu", "메뉴", "메뉴명"]) ?? (firstColKey ? r[firstColKey] : "") ?? "").trim()
+          const ing = String(col(r, ["ingredient", "재료", "재료명", "식자재명", "식자재"]) ?? "").trim()
+          const qty = toNumber(col(r, ["qty", "수량", "용량", "Qty"]), 0)
+
+          // If menu column has a value, parse it
+          if (rawMenu) {
+            // Check if the name ends with a size letter (S, M, L, P)
+            const sizeMatch = rawMenu.match(/^(.+?)(S|M|L|P)$/i)
+            if (sizeMatch) {
+              currentMenuName = sizeMatch[1].trim()
+              currentSize = sizeMatch[2].toUpperCase() as "S" | "M" | "L" | "P"
+            } else {
+              currentMenuName = rawMenu
+              currentSize = "M" // default
+            }
+            // Find menu
+            const menu = newMenus.find((m) => m.name === currentMenuName) ?? menus.find((m) => m.name === currentMenuName)
+            currentMenuId = menu?.id ?? ""
+          }
+
+          if (!currentMenuId || !ing) continue
+
+          newRecipes.push({
+            id: crypto.randomUUID(),
+            menu_id: currentMenuId,
+            size: currentSize,
+            ingredient_name: ing,
+            qty,
+          })
+        }
       }
 
       // Options sheet
@@ -403,6 +472,7 @@ export function AdminPage({
         {(
           [
             ["menus", "메뉴 설정"],
+            ["recipes", "레시피 설정"],
             ["platform", "플랫폼 설정"],
             ["options", "옵션 설정"],
             ["ingredients", "단가 수정"],
@@ -426,6 +496,14 @@ export function AdminPage({
       <div className="p-3">
         {tab === "menus" && (
           <AdminMenus
+            menus={menus}
+            recipes={recipes}
+            ingredients={ingredients}
+            mutate={mutate}
+          />
+        )}
+        {tab === "recipes" && (
+          <AdminRecipes
             menus={menus}
             recipes={recipes}
             ingredients={ingredients}
@@ -717,6 +795,293 @@ function AdminMenus({
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/* ========== Admin Recipes ========== */
+function AdminRecipes({
+  menus,
+  recipes,
+  ingredients,
+  mutate,
+}: {
+  menus: Menu[]
+  recipes: Recipe[]
+  ingredients: Ingredient[]
+  mutate: KeyedMutator<unknown>
+}) {
+  const [localRecipes, setLocalRecipes] = useState<Recipe[]>(recipes)
+  const [saving, setSaving] = useState(false)
+  const [selectedMenuId, setSelectedMenuId] = useState<string | null>(menus[0]?.id ?? null)
+  const [selectedSize, setSelectedSize] = useState<"S" | "M" | "L" | "P">("M")
+
+  // Sync with parent data
+  const recKey = recipes.map((r) => r.id).join(",")
+  const [prevKey, setPrevKey] = useState(recKey)
+  if (recKey !== prevKey) {
+    setLocalRecipes(recipes)
+    setPrevKey(recKey)
+  }
+
+  const selectedMenu = menus.find((m) => m.id === selectedMenuId) ?? null
+  const isSideOrDrink = selectedMenu?.category === "사이드" || selectedMenu?.category === "음료"
+  const availableSizes: ("S" | "M" | "L" | "P")[] = isSideOrDrink ? ["P"] : ["S", "M", "L"]
+
+  // Auto-switch size if current size is not available for this category
+  React.useEffect(() => {
+    if (!availableSizes.includes(selectedSize)) {
+      setSelectedSize(availableSizes[0])
+    }
+  }, [selectedMenuId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentRecipes = localRecipes.filter(
+    (r) => r.menu_id === selectedMenuId && r.size === selectedSize
+  )
+
+  const addRecipeLine = () => {
+    if (!selectedMenuId) return
+    setLocalRecipes((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        menu_id: selectedMenuId,
+        size: selectedSize,
+        ingredient_name: ingredients[0]?.name ?? "",
+        qty: 0,
+      },
+    ])
+  }
+
+  const removeRecipeLine = (id: string) => {
+    setLocalRecipes((prev) => prev.filter((r) => r.id !== id))
+  }
+
+  const updateRecipeLine = (id: string, field: string, value: unknown) => {
+    setLocalRecipes((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    )
+  }
+
+  const copySizeRecipes = (fromSize: "S" | "M" | "L" | "P") => {
+    if (!selectedMenuId) return
+    const source = localRecipes.filter(
+      (r) => r.menu_id === selectedMenuId && r.size === fromSize
+    )
+    if (source.length === 0) {
+      alert(`${fromSize} 사이즈에 레시피가 없습니다.`)
+      return
+    }
+    // Remove existing recipes for current size
+    const withoutCurrent = localRecipes.filter(
+      (r) => !(r.menu_id === selectedMenuId && r.size === selectedSize)
+    )
+    // Copy from source
+    const copied = source.map((r) => ({
+      ...r,
+      id: crypto.randomUUID(),
+      size: selectedSize,
+    }))
+    setLocalRecipes([...withoutCurrent, ...copied])
+    alert(`${fromSize} -> ${selectedSize}로 레시피를 복사했습니다. 용량을 수정 후 "DB에 저장"을 눌러주세요.`)
+  }
+
+  const save = async () => {
+    setSaving(true)
+    // save_menus also saves recipes
+    await apiPost("save_menus", { menus, recipes: localRecipes })
+    await mutate()
+    setSaving(false)
+    alert("레시피 저장 완료!")
+  }
+
+  const unitPrice = (name: string) => {
+    const it = ingredients.find((x) => x.name === name)
+    if (!it || !it.total_qty) return 0
+    return it.buy_price / it.total_qty
+  }
+
+  // Recipe count per menu for visual indicator
+  const recipeCountPerMenu = (menuId: string) =>
+    localRecipes.filter((r) => r.menu_id === menuId).length
+
+  return (
+    <div>
+      <div className="mb-2.5 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-xl border border-primary bg-primary px-3 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? "저장 중..." : "DB에 저장"}
+        </button>
+        <span className="text-xs font-bold text-muted-foreground">
+          {"메뉴 선택 -> 사이즈 선택 -> 식자재/용량 설정"}
+        </span>
+      </div>
+
+      {/* Menu selector */}
+      <div className="mb-3">
+        <div className="mb-1.5 text-xs font-black text-foreground">메뉴 선택</div>
+        <div className="flex flex-wrap gap-1.5">
+          {menus.map((m) => {
+            const count = recipeCountPerMenu(m.id)
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setSelectedMenuId(m.id)}
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                  selectedMenuId === m.id
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-foreground hover:bg-muted"
+                }`}
+              >
+                {m.name}
+                {count > 0 && (
+                  <span className="ml-1 text-[9px] text-muted-foreground">({count})</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {selectedMenu && (
+        <>
+          {/* Size selector */}
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xs font-black text-foreground">사이즈:</span>
+            {availableSizes.map((s) => {
+              const sizeCount = localRecipes.filter(
+                (r) => r.menu_id === selectedMenuId && r.size === s
+              ).length
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSelectedSize(s)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-black transition-colors ${
+                    selectedSize === s
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {s === "P" ? "P(개수)" : s}
+                  {sizeCount > 0 && (
+                    <span className="ml-1 opacity-70">({sizeCount})</span>
+                  )}
+                </button>
+              )
+            })}
+
+            {/* Copy from another size */}
+            {!isSideOrDrink && availableSizes.filter((s) => s !== selectedSize).length > 0 && (
+              <div className="ml-2 flex items-center gap-1">
+                <span className="text-[10px] font-bold text-muted-foreground">복사:</span>
+                {availableSizes
+                  .filter((s) => s !== selectedSize)
+                  .map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => copySizeRecipes(s)}
+                      className="rounded-md border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-muted-foreground hover:bg-muted"
+                    >
+                      {s}에서 복사
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recipe lines */}
+          <div className="rounded-xl border border-border bg-muted/50 p-3">
+            <div className="mb-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_auto] gap-2 text-xs font-black text-muted-foreground">
+              <div>식자재명</div>
+              <div>용량(g)</div>
+              <div>단가</div>
+              <div>g당 단가</div>
+              <div />
+            </div>
+
+            {currentRecipes.length === 0 && (
+              <div className="py-4 text-center text-xs font-bold text-muted-foreground">
+                {"레시피가 없습니다. \"+ 식자재 추가\"로 추가하세요."}
+              </div>
+            )}
+
+            {currentRecipes.map((r) => {
+              const up = unitPrice(r.ingredient_name)
+              const it = ingredients.find((x) => x.name === r.ingredient_name)
+              return (
+                <div
+                  key={r.id}
+                  className="mt-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_auto] items-center gap-2"
+                >
+                  <select
+                    value={r.ingredient_name}
+                    onChange={(e) => updateRecipeLine(r.id, "ingredient_name", e.target.value)}
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                  >
+                    <option value="">선택</option>
+                    {ingredients.map((ing) => (
+                      <option key={ing.id} value={ing.name}>{ing.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    value={r.qty}
+                    onChange={(e) => updateRecipeLine(r.id, "qty", toNumber(e.target.value, 0))}
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={it ? won(it.buy_price) : "-"}
+                    disabled
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={up ? up.toFixed(2) : "0"}
+                    disabled
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeRecipeLine(r.id)}
+                    className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs font-black text-destructive hover:bg-destructive/10"
+                  >
+                    삭제
+                  </button>
+                </div>
+              )
+            })}
+
+            <button
+              type="button"
+              onClick={addRecipeLine}
+              className="mt-3 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-xs font-black text-foreground hover:bg-muted"
+            >
+              + 식자재 추가
+            </button>
+
+            {/* Total cost summary */}
+            {currentRecipes.length > 0 && (
+              <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm font-black text-foreground">
+                {"총 원가: "}
+                {won(
+                  currentRecipes.reduce(
+                    (sum, r) => sum + toNumber(r.qty, 0) * unitPrice(r.ingredient_name),
+                    0
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
