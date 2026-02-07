@@ -23,10 +23,17 @@ import { OptionProfitTable } from "@/components/cost/option-profit-table"
 import { AdminPage } from "@/components/cost/admin-page"
 import { BottomBar } from "@/components/cost/bottom-bar"
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = async (url: string) => {
+  const response = await fetch(url)
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || "데이터를 불러오지 못했습니다.")
+  }
+  return response.json()
+}
 
 export default function Home() {
-  const { data, mutate } = useSWR("/api/data", fetcher, {
+  const { data, error, mutate } = useSWR("/api/data", fetcher, {
     revalidateOnFocus: false,
   })
 
@@ -102,6 +109,20 @@ export default function Home() {
       qty: {},
     }))
   }, [])
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6 text-center">
+        <div className="space-y-2 text-muted-foreground font-sans">
+          <div className="text-base font-semibold">데이터를 불러올 수 없습니다.</div>
+          <p className="text-sm">
+            Supabase 연결 정보 또는 API 응답을 확인해 주세요.
+          </p>
+          <p className="text-xs text-muted-foreground/80">{error.message}</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!data) {
     return (
