@@ -87,6 +87,12 @@ export function calcAll(
   ingredients: Ingredient[],
   groups: OptionGroup[]
 ): CalcResult {
+  const checkedIds = new Set(
+    Object.entries(state.checked)
+      .filter(([, isChecked]) => isChecked)
+      .map(([id]) => id)
+  )
+
   const basePrice = toNumber(
     menu
       ? state.size === "S"
@@ -101,29 +107,6 @@ export function calcAll(
   )
   const baseCost = calcRecipeCost(menu, state.size, recipes, ingredients)
 
-  // Get selected lines
-  const lines: { opt: Option; qty: number }[] = []
-
-  for (const gid of Object.keys(state.radio)) {
-    const id = state.radio[gid]
-    const opt = options.find((o) => o.id === id && o.enabled !== false)
-    if (opt) lines.push({ opt, qty: 1 })
-  }
-
-  for (const id of Object.keys(state.checked)) {
-    if (state.checked[id]) {
-      const opt = options.find((o) => o.id === id && o.enabled !== false)
-      if (opt) lines.push({ opt, qty: 1 })
-    }
-  }
-
-  for (const id of Object.keys(state.qty)) {
-    const opt = options.find((o) => o.id === id && o.enabled !== false)
-    if (!opt) continue
-    const q = clamp(toNumber(state.qty[id], 0), 0, opt.max_qty || 99)
-    if (q > 0) lines.push({ opt, qty: q })
-  }
-
   // Enforce limits
   for (const gid of ["TOPPING", "SIDE", "DRINK"]) {
     const g = groups.find((gr) => gr.id === gid)
@@ -134,13 +117,34 @@ export function calcAll(
         o.enabled !== false &&
         o.group_id === gid &&
         o.type === "check" &&
-        state.checked[o.id]
+        checkedIds.has(o.id)
     )
     if (inGroup.length > max) {
       for (const o of inGroup.slice(max)) {
-        state.checked[o.id] = false
+        checkedIds.delete(o.id)
       }
     }
+  }
+
+  // Get selected lines
+  const lines: { opt: Option; qty: number }[] = []
+
+  for (const gid of Object.keys(state.radio)) {
+    const id = state.radio[gid]
+    const opt = options.find((o) => o.id === id && o.enabled !== false)
+    if (opt) lines.push({ opt, qty: 1 })
+  }
+
+  for (const id of checkedIds) {
+    const opt = options.find((o) => o.id === id && o.enabled !== false)
+    if (opt) lines.push({ opt, qty: 1 })
+  }
+
+  for (const id of Object.keys(state.qty)) {
+    const opt = options.find((o) => o.id === id && o.enabled !== false)
+    if (!opt) continue
+    const q = clamp(toNumber(state.qty[id], 0), 0, opt.max_qty || 99)
+    if (q > 0) lines.push({ opt, qty: q })
   }
 
   const optPrice = lines.reduce(
