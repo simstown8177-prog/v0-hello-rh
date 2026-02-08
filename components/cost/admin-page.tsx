@@ -366,24 +366,31 @@ export function AdminPage({
         }
       }
       console.log("[v0] Option rows found:", optRows.length)
+      if (optRows.length > 0) {
+        console.log("[v0] Option first row keys:", Object.keys(optRows[0]))
+        console.log("[v0] Option first row:", JSON.stringify(optRows[0]))
+      }
       for (const r of optRows) {
-          const name = String(col(r, ["name", "옵션명", "이름", "Name"]) ?? "").trim()
-          const groupId = String(col(r, ["groupId", "그룹", "group_id", "그룹ID", "GroupId"]) ?? "").trim()
-          if (!name || !groupId) continue
+          const name = String(col(r, ["name", "옵션명", "이름", "Name", "옵션", "option"]) ?? "").trim()
+          if (!name) continue
+          // groupId is optional - defaults to "TOPPING"
+          const groupId = String(col(r, ["groupId", "그룹", "group_id", "그룹ID", "GroupId", "group", "Group"]) ?? "TOPPING").trim() || "TOPPING"
           newOptions.push({
             id: crypto.randomUUID(),
             name,
             group_id: groupId,
             type: (String(col(r, ["type", "타입", "Type"]) ?? "check").trim() as Option["type"]) || "check",
-            price_delta: toNumber(col(r, ["priceDelta", "판매가", "price_delta", "PriceDelta"]), 0),
-            cost_delta: toNumber(col(r, ["costDelta", "원가", "cost_delta", "CostDelta"]), 0),
+            price_delta: toNumber(col(r, ["priceDelta", "판매가", "price_delta", "PriceDelta", "추가판매가", "추가금"]), 0),
+            cost_delta: toNumber(col(r, ["costDelta", "원가", "cost_delta", "CostDelta", "추가원가"]), 0),
             max_qty: toNumber(col(r, ["maxQty", "최대수량", "max_qty", "MaxQty"]), 4),
             enabled: (() => {
               const v = col(r, ["enabled", "활성", "사용", "Enabled"])
+              if (v === undefined || v === null) return true
               return v !== false && v !== 0 && String(v) !== "false" && String(v) !== "0"
             })(),
           })
       }
+      console.log("[v0] Options parsed:", newOptions.length)
 
       if (newMenus.length === 0 && newIngredients.length === 0 && newOptions.length === 0) {
         const sheetList = sheetNames.join(", ")
@@ -396,15 +403,34 @@ export function AdminPage({
         return
       }
 
-      await apiPost("upsert_all", {
+      const uploadPayload = {
         ingredients: newIngredients.length ? newIngredients : ingredients,
         menus: newMenus.length ? newMenus : menus,
-        recipes: newRecipes,
+        recipes: newRecipes.length ? newRecipes : recipes,
         options: newOptions.length ? newOptions : options,
+      }
+      console.log("[v0] Upload payload counts:", {
+        ingredients: uploadPayload.ingredients.length,
+        menus: uploadPayload.menus.length,
+        recipes: uploadPayload.recipes.length,
+        options: uploadPayload.options.length,
       })
 
+      const result = await apiPost("upsert_all", uploadPayload)
+
+      if (result.error) {
+        alert(`DB 저장 실패: ${result.error}`)
+        return
+      }
+
       await mutate()
-      alert("엑셀 업로드 완료! DB에 저장되었습니다.")
+      alert(
+        `엑셀 업로드 완료!\n\n` +
+        `메뉴: ${newMenus.length}개, ` +
+        `재료: ${newIngredients.length}개, ` +
+        `레시피: ${newRecipes.length}개, ` +
+        `옵션: ${newOptions.length}개 반영됨`
+      )
     } catch (err) {
       console.error("[v0] Excel upload error:", err)
       const msg = err instanceof Error ? err.message : String(err)

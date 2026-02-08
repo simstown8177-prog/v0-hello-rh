@@ -24,6 +24,20 @@ export async function GET() {
   })
 }
 
+/** Insert rows in batches to avoid Supabase payload limits */
+async function batchInsert(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: string,
+  rows: Record<string, unknown>[],
+  batchSize = 500,
+) {
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize)
+    const { error } = await supabase.from(table).insert(chunk)
+    if (error) throw new Error(`${table} insert failed at batch ${Math.floor(i / batchSize)}: ${error.message}`)
+  }
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient()
   const body = await request.json()
@@ -44,48 +58,11 @@ export async function POST(request: Request) {
           supabase.from("menus").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
         ])
 
-        // Insert fresh data
-        const results = await Promise.all([
-          ingredients?.length
-            ? supabase.from("ingredients").insert(ingredients)
-            : Promise.resolve({ error: null }),
-          menus?.length
-            ? supabase.from("menus").insert(menus)
-            : Promise.resolve({ error: null }),
-        ])
-
-        const menuInsertError = results[1].error
-        if (menuInsertError) {
-          return NextResponse.json(
-            { error: menuInsertError.message },
-            { status: 400 }
-          )
-        }
-
-        // After menus inserted, get their IDs for recipe mapping
-        if (recipes?.length) {
-          const { error: recipeErr } = await supabase
-            .from("recipes")
-            .insert(recipes)
-          if (recipeErr) {
-            return NextResponse.json(
-              { error: recipeErr.message },
-              { status: 400 }
-            )
-          }
-        }
-
-        if (options?.length) {
-          const { error: optErr } = await supabase
-            .from("options")
-            .insert(options)
-          if (optErr) {
-            return NextResponse.json(
-              { error: optErr.message },
-              { status: 400 }
-            )
-          }
-        }
+        // Insert fresh data in batches
+        if (ingredients?.length) await batchInsert(supabase, "ingredients", ingredients)
+        if (menus?.length) await batchInsert(supabase, "menus", menus)
+        if (recipes?.length) await batchInsert(supabase, "recipes", recipes)
+        if (options?.length) await batchInsert(supabase, "options", options)
 
         return NextResponse.json({ success: true })
       }
@@ -96,11 +73,7 @@ export async function POST(request: Request) {
           .from("ingredients")
           .delete()
           .neq("id", "00000000-0000-0000-0000-000000000000")
-        if (ingredients?.length) {
-          const { error } = await supabase.from("ingredients").insert(ingredients)
-          if (error)
-            return NextResponse.json({ error: error.message }, { status: 400 })
-        }
+        if (ingredients?.length) await batchInsert(supabase, "ingredients", ingredients)
         return NextResponse.json({ success: true })
       }
 
@@ -115,16 +88,8 @@ export async function POST(request: Request) {
           .delete()
           .neq("id", "00000000-0000-0000-0000-000000000000")
 
-        if (menus?.length) {
-          const { error } = await supabase.from("menus").insert(menus)
-          if (error)
-            return NextResponse.json({ error: error.message }, { status: 400 })
-        }
-        if (recipes?.length) {
-          const { error } = await supabase.from("recipes").insert(recipes)
-          if (error)
-            return NextResponse.json({ error: error.message }, { status: 400 })
-        }
+        if (menus?.length) await batchInsert(supabase, "menus", menus)
+        if (recipes?.length) await batchInsert(supabase, "recipes", recipes)
         return NextResponse.json({ success: true })
       }
 
@@ -134,11 +99,7 @@ export async function POST(request: Request) {
           .from("options")
           .delete()
           .neq("id", "00000000-0000-0000-0000-000000000000")
-        if (options?.length) {
-          const { error } = await supabase.from("options").insert(options)
-          if (error)
-            return NextResponse.json({ error: error.message }, { status: 400 })
-        }
+        if (options?.length) await batchInsert(supabase, "options", options)
         return NextResponse.json({ success: true })
       }
 
@@ -149,15 +110,13 @@ export async function POST(request: Request) {
           .from("option_menu_map")
           .delete()
           .neq("id", "00000000-0000-0000-0000-000000000000")
-        // Insert new mappings
+        // Insert new mappings in batches
         if (mappings?.length) {
           const rows = mappings.map((m) => ({
             option_id: m.option_id,
             menu_id: m.menu_id,
           }))
-          const { error } = await supabase.from("option_menu_map").insert(rows)
-          if (error)
-            return NextResponse.json({ error: error.message }, { status: 400 })
+          await batchInsert(supabase, "option_menu_map", rows)
         }
         return NextResponse.json({ success: true })
       }
