@@ -998,10 +998,11 @@ function AdminRecipes({
 
           {/* Recipe lines */}
           <div className="rounded-xl border border-border bg-muted/50 p-3">
-            <div className="mb-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_auto] gap-2 text-xs font-black text-muted-foreground">
+            <div className="mb-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_.8fr_auto] gap-2 text-xs font-black text-muted-foreground">
               <div>식자재명</div>
               <div>용량(g)</div>
               <div>단가</div>
+              <div>단가 총 금액</div>
               <div>g당 단가</div>
               <div />
             </div>
@@ -1018,7 +1019,7 @@ function AdminRecipes({
               return (
                 <div
                   key={r.id}
-                  className="mt-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_auto] items-center gap-2"
+                  className="mt-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_.8fr_auto] items-center gap-2"
                 >
                   <select
                     value={r.ingredient_name}
@@ -1039,6 +1040,12 @@ function AdminRecipes({
                   <input
                     type="text"
                     value={it ? won(it.buy_price) : "-"}
+                    disabled
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={up ? won(Math.round(up * toNumber(r.qty, 0))) : "0"}
                     disabled
                     className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
                   />
