@@ -1024,11 +1024,12 @@ function AdminRecipes({
 
           {/* Recipe lines */}
           <div className="rounded-xl border border-border bg-muted/50 p-3">
-            <div className="mb-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_auto] gap-2 text-xs font-black text-muted-foreground">
+            <div className="mb-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_.8fr_auto] gap-2 text-xs font-black text-muted-foreground">
               <div>식자재명</div>
               <div>용량(g)</div>
               <div>단가</div>
               <div>g당 단가</div>
+              <div>단가 총 금액</div>
               <div />
             </div>
 
@@ -1041,10 +1042,11 @@ function AdminRecipes({
             {currentRecipes.map((r) => {
               const up = unitPrice(r.ingredient_name)
               const it = ingredients.find((x) => x.name === r.ingredient_name)
+              const totalPrice = toNumber(r.qty, 0) * up
               return (
                 <div
                   key={r.id}
-                  className="mt-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_auto] items-center gap-2"
+                  className="mt-2 grid grid-cols-[1.5fr_.8fr_.8fr_.8fr_.8fr_auto] items-center gap-2"
                 >
                   <select
                     value={r.ingredient_name}
@@ -1074,6 +1076,12 @@ function AdminRecipes({
                     disabled
                     className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
                   />
+                  <input
+                    type="text"
+                    value={won(totalPrice)}
+                    disabled
+                    className="w-full rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm font-bold text-primary outline-none"
+                  />
                   <button
                     type="button"
                     onClick={() => removeRecipeLine(r.id)}
@@ -1096,13 +1104,15 @@ function AdminRecipes({
             {/* Total cost summary */}
             {currentRecipes.length > 0 && (
               <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm font-black text-foreground">
-                {"총 원가: "}
-                {won(
-                  currentRecipes.reduce(
-                    (sum, r) => sum + toNumber(r.qty, 0) * unitPrice(r.ingredient_name),
-                    0
-                  )
-                )}
+                {"총 식자재 원가: "}
+                <span className="text-primary">
+                  {won(
+                    currentRecipes.reduce(
+                      (sum, r) => sum + toNumber(r.qty, 0) * unitPrice(r.ingredient_name),
+                      0
+                    )
+                  )}
+                </span>
               </div>
             )}
           </div>
