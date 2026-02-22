@@ -419,7 +419,7 @@ export function AdminPage({
       const result = await apiPost("upsert_all", uploadPayload)
 
       if (result.error) {
-        alert(`DB 저장 실패: ${result.error}`)
+        alert(`엑셀 업로드 실패: ${result.error}\n\n현재 로컬 데이터는 유지되므로 다시 시도하세요.`)
         return
       }
 
@@ -645,10 +645,20 @@ function AdminMenus({
 
   const save = async () => {
     setSaving(true)
-    await apiPost("save_menus", { menus: localMenus, recipes: localRecipes })
-    await mutate()
-    setSaving(false)
-    alert("메뉴 저장 완료!")
+    try {
+      const result = await apiPost("save_menus", { menus: localMenus, recipes: localRecipes })
+      if (result.error) {
+        alert(`저장 실패: ${result.error}\n\n현재 작업이 유지됩니다. 다시 시도하세요.`)
+        setSaving(false)
+        return
+      }
+      await mutate()
+      setSaving(false)
+      alert("메뉴 저장 완료!")
+    } catch (err) {
+      alert(`저장 중 오류 발생: ${err instanceof Error ? err.message : "알 수 없는 오류"}\n\n현재 작업이 유지됩니다.`)
+      setSaving(false)
+    }
   }
 
   return (
@@ -676,7 +686,7 @@ function AdminMenus({
 
       {/* Bulk category assignment */}
       <div className="mb-3 rounded-2xl border border-dashed border-primary/40 bg-accent/30 p-3">
-        <div className="mb-2 text-xs font-black text-foreground">일괄 카테고리 변경</div>
+        <div className="mb-2 text-xs font-black text-foreground">���괄 카테고리 변경</div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -914,11 +924,20 @@ function AdminRecipes({
 
   const save = async () => {
     setSaving(true)
-    // save_menus also saves recipes
-    await apiPost("save_menus", { menus, recipes: localRecipes })
-    await mutate()
-    setSaving(false)
-    alert("레시피 저장 완료!")
+    try {
+      const result = await apiPost("save_menus", { menus, recipes: localRecipes })
+      if (result.error) {
+        alert(`저장 실패: ${result.error}\n\n현재 작업이 유지됩니다. 다시 시도하세요.`)
+        setSaving(false)
+        return
+      }
+      await mutate()
+      setSaving(false)
+      alert("레시피 저장 완료!")
+    } catch (err) {
+      alert(`저장 중 오류 발생: ${err instanceof Error ? err.message : "알 수 없는 오류"}\n\n현재 작업이 유지됩니다.`)
+      setSaving(false)
+    }
   }
 
   const unitPrice = (name: string) => {
@@ -1267,10 +1286,20 @@ function AdminIngredients({
 
   const save = async () => {
     setSaving(true)
-    await apiPost("save_ingredients", { ingredients: local })
-    await mutate()
-    setSaving(false)
-    alert("단가 저장 완료!")
+    try {
+      const result = await apiPost("save_ingredients", { ingredients: local })
+      if (result.error) {
+        alert(`저장 실패: ${result.error}\n\n현재 작업이 유지됩니다. 다시 시도하세요.`)
+        setSaving(false)
+        return
+      }
+      await mutate()
+      setSaving(false)
+      alert("단가 저장 완료!")
+    } catch (err) {
+      alert(`저장 중 오류 발생: ${err instanceof Error ? err.message : "알 수 없는 오류"}\n\n현재 작업이 유지됩니다.`)
+      setSaving(false)
+    }
   }
 
   return (
@@ -1490,18 +1519,36 @@ function AdminOptions({
 
   const save = async () => {
     setSaving(true)
-    await apiPost("save_options", { options: local })
-    // Save menu mappings
-    const mappings: { option_id: string; menu_id: string }[] = []
-    for (const [optId, menuIds] of Object.entries(menuMap)) {
-      for (const menuId of menuIds) {
-        mappings.push({ option_id: optId, menu_id: menuId })
+    try {
+      // Save options first
+      const optResult = await apiPost("save_options", { options: local })
+      if (optResult.error) {
+        alert(`옵션 저장 실패: ${optResult.error}\n\n현재 작업이 유지됩니다. 다시 시도하세요.`)
+        setSaving(false)
+        return
       }
+      
+      // Then save menu mappings
+      const mappings: { option_id: string; menu_id: string }[] = []
+      for (const [optId, menuIds] of Object.entries(menuMap)) {
+        for (const menuId of menuIds) {
+          mappings.push({ option_id: optId, menu_id: menuId })
+        }
+      }
+      const mapResult = await apiPost("save_option_menu_map", { mappings })
+      if (mapResult.error) {
+        alert(`메뉴 매핑 저장 실패: ${mapResult.error}\n\n현재 작업이 유지됩니다. 다시 시도하세요.`)
+        setSaving(false)
+        return
+      }
+      
+      await mutate()
+      setSaving(false)
+      alert("옵션 및 메뉴 매핑 저장 완료!")
+    } catch (err) {
+      alert(`저장 중 오류 발생: ${err instanceof Error ? err.message : "알 수 없는 오류"}\n\n현재 작업이 유지됩니다.`)
+      setSaving(false)
     }
-    await apiPost("save_option_menu_map", { mappings })
-    await mutate()
-    setSaving(false)
-    alert("옵션 및 메뉴 매핑 저장 완료!")
   }
 
   return (

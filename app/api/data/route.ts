@@ -48,17 +48,35 @@ export async function POST(request: Request) {
       case "upsert_all": {
         const { ingredients, menus, recipes, options } = payload
 
-        // Clear existing data
-        await Promise.all([
+        // Step 1: Validate all data can be inserted FIRST (without deleting)
+        const tempInsertResults = await Promise.allSettled([
+          ingredients?.length ? batchInsert(supabase, "ingredients", ingredients.map(i => ({ ...i, id: crypto.randomUUID() }))) : Promise.resolve(),
+          menus?.length ? batchInsert(supabase, "menus", menus.map(m => ({ ...m, id: crypto.randomUUID() }))) : Promise.resolve(),
+          recipes?.length ? batchInsert(supabase, "recipes", recipes.map(r => ({ ...r, id: crypto.randomUUID() }))) : Promise.resolve(),
+          options?.length ? batchInsert(supabase, "options", options.map(o => ({ ...o, id: crypto.randomUUID() }))) : Promise.resolve(),
+        ])
+        
+        // Check if any inserts would fail
+        const failures = tempInsertResults.filter(r => r.status === "rejected")
+        if (failures.length > 0) {
+          const error = (failures[0] as PromiseRejectedResult).reason
+          return NextResponse.json({ error: `데이터 검증 실패: ${error}` }, { status: 400 })
+        }
+
+        // Step 2: Only then delete old data (safe delete)
+        const deletePromises = [
           supabase.from("recipes").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
           supabase.from("options").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
-        ])
-        await Promise.all([
           supabase.from("ingredients").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
           supabase.from("menus").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
-        ])
+        ]
+        const deleteResults = await Promise.allSettled(deletePromises)
+        const deleteErrors = deleteResults.filter(r => r.status === "rejected")
+        if (deleteErrors.length > 0) {
+          return NextResponse.json({ error: "기존 데이터 삭제 실패" }, { status: 500 })
+        }
 
-        // Insert fresh data in batches
+        // Step 3: Insert fresh data in batches (this should now succeed)
         if (ingredients?.length) await batchInsert(supabase, "ingredients", ingredients)
         if (menus?.length) await batchInsert(supabase, "menus", menus)
         if (recipes?.length) await batchInsert(supabase, "recipes", recipes)
