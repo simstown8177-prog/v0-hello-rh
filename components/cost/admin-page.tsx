@@ -1002,6 +1002,7 @@ function AdminRecipes({
               <div>식자재명</div>
               <div>용량(g)</div>
               <div>단가</div>
+              <div>단가 총 금액</div>
               <div>g당 단가</div>
               <div>총 단가</div>
               <div />
@@ -1041,6 +1042,12 @@ function AdminRecipes({
                   <input
                     type="text"
                     value={it ? won(it.buy_price) : "-"}
+                    disabled
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={up ? won(Math.round(up * toNumber(r.qty, 0))) : "0"}
                     disabled
                     className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-bold text-muted-foreground outline-none"
                   />
